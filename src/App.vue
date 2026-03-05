@@ -432,7 +432,7 @@ const getStatusClass = (status) => {
                           <label class="media-add"><span>+</span><input type="file" hidden multiple accept="image/*,video/*" @change="onFileChange($event, item)"></label>
                         </div>
 
-                        <!--<div class="input-group input-group-sm mb-3 mt-2">
+                        <div class="input-group input-group-sm mb-3 mt-2">
                           <input :id="'single-drive-'+item.id" class="form-control" placeholder="Link ảnh lẻ..." @keyup.enter="addSingleDrive(item)">
                           <button @click="addSingleDrive(item)" class="btn btn-outline-primary">Thêm</button>
                         </div>
@@ -796,82 +796,476 @@ const getStatusClass = (status) => {
 </template>
 
 <style scoped>
-/* CSS grid responsive như ảnh (3 cột desktop, 2 tablet, 1 mobile) */
-.page-wrap { min-height: 100vh; padding: 2rem 1rem; background: #f1f5f9; font-family: system-ui, -apple-system, sans-serif; }
-.layout { max-width: 1450px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.5rem; }
-.control-card, .cases-section { background: white; border-radius: 20px; padding: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+/* Base styles - Desktop first, explicit multi-column */
+.page-wrap { 
+  min-height: 100vh; 
+  padding: 2rem 1rem; 
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); /* Gradient tinh tế cho chiều sâu */
+  font-family: system-ui, -apple-system, sans-serif; 
+}
+.layout { 
+  max-width: 1450px; 
+  margin: 0 auto; 
+  display: flex; 
+  flex-direction: column; 
+  gap: 1.5rem; 
+  width: 100%; /* Đảm bảo full width trên desktop */
+}
+.control-card, .cases-section { 
+  background: white; 
+  border-radius: 20px; 
+  padding: 1.5rem; 
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.1); /* Shadow mềm mại */
+  border: 1px solid #e2e8f0;
+  width: 100%; /* Full width container để grid fit columns */
+}
 
-/* 3 nút loại ca (toggle-row) */
-.toggle-row { display: flex; gap: 10px; margin-bottom: 1rem; }
-.toggle-row button { flex: 1; padding: 0.75rem; border-radius: 12px; font-size: 0.95rem; transition: all 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-.toggle-row button:hover { transform: translateY(-1px); box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
+/* Toggle rows - Horizontal on desktop */
+.toggle-row, .status-toggle-row { 
+  display: flex; 
+  gap: 0.75rem; 
+  margin-bottom: 1rem; 
+}
+.toggle-row button, .status-toggle-row button { 
+  flex: 1; 
+  padding: 0.875rem 1rem; 
+  border-radius: 12px; 
+  font-size: 1rem; 
+  font-weight: 600; 
+  transition: all 0.3s ease; 
+  box-shadow: 0 2px 4px rgba(0,0,0,0.08); 
+  border: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+.toggle-row button:hover, .status-toggle-row button:hover { 
+  transform: translateY(-2px); 
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
+}
+.toggle-row button.active, .status-toggle-row button.active { 
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15); 
+}
 
-/* 3 nút trạng thái (status-toggle-row - mới thêm từ code 2, chỉ hiện cho ASVN/CSVN) */
-.status-toggle-row { display: flex; gap: 10px; margin-bottom: 1rem; }
-.status-toggle-row button { flex: 1; padding: 0.75rem; border-radius: 12px; font-size: 0.95rem; transition: all 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-.status-toggle-row button:hover { transform: translateY(-1px); box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
+/* Control body - Cleaner layout */
+.control-body { 
+  background: #f8f9fa; 
+  border-radius: 12px; 
+  padding: 1.25rem; 
+  border: 1px solid #e5e7eb;
+}
+.control-actions { 
+  display: grid; 
+  grid-template-columns: 1fr 1fr 1fr; /* Cân bằng 3 phần trên desktop */
+  gap: 0.75rem; 
+  margin-top: 1rem; 
+}
+.control-actions input { 
+  grid-column: span 3; /* Search full width trên desktop */
+  padding: 0.875rem; 
+  font-size: 1rem;
+}
 
-/* Control body */
-.control-body { background: #f8f9fa; border-radius: 12px; padding: 1rem; }
-.control-actions { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; margin-top: 10px; }
+/* Section header - Center and prominent */
+.section-header { 
+  margin-bottom: 1.5rem; 
+  text-align: center; 
+}
+.section-title { 
+  font-weight: 800; 
+  color: #1e293b; 
+  font-size: 1.6rem; /* Lớn hơn cho desktop */
+  margin: 0; 
+  letter-spacing: -0.025em;
+}
 
-/* Section header */
-.section-header { margin-bottom: 1rem; }
-.section-title { font-weight: 800; color: #1e293b; font-size: 1.25rem; margin: 0; }
+/* Case strip - Explicit multi-column on desktop */
+.case-strip { 
+  display: grid; 
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); /* 3 cột+ trên desktop */
+  gap: 1.25rem; 
+  width: 100%; /* Full width để fit columns */
+}
 
-/* Case strip grid (phân ra như ảnh) */
-.case-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.25rem; }
-
-/* Card styling (viền màu, hover như ảnh) */
-.case-card { animation: fadeIn 0.4s ease-out; cursor: pointer; transition: all 0.2s; border-radius: 16px; overflow: hidden; }
-.case-card:hover { transform: translateY(-4px); box-shadow: 0 8px 20px rgba(0,0,0,0.12) !important; }
-.card { transition: all 0.3s ease; border: 1px solid #e2e8f0 !important; border-radius: 16px; height: 100%; }
-.card:hover { box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1) !important; }
-.card-body { padding: 1.25rem; display: flex; flex-direction: column; }
+/* Card styling - Softer, hover effects */
+.case-card { 
+  animation: fadeIn 0.4s ease-out; 
+  cursor: pointer; 
+  transition: all 0.3s ease; 
+  border-radius: 16px; 
+  overflow: hidden; 
+  background: white;
+}
+.case-card:hover { 
+  transform: translateY(-4px); 
+  box-shadow: 0 10px 25px rgba(0,0,0,0.1) !important; 
+}
+.card { 
+  transition: all 0.3s ease; 
+  border: 1px solid #e2e8f0 !important; 
+  border-radius: 16px; 
+  height: 100%; 
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.card:hover { 
+  box-shadow: 0 8px 20px rgba(0,0,0,0.12) !important; 
+}
+.card-body { 
+  padding: 1.5rem; /* Thoáng hơn trên desktop */
+  display: flex; 
+  flex-direction: column; 
+}
 .border-primary { border-left-color: #3b82f6 !important; }
 .border-warning { border-left-color: #f59e0b !important; }
 .border-success { border-left-color: #10b981 !important; }
 
-/* Info & media (icon, thumbnails như ảnh) */
-.info-content { flex: 1; display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.9rem; }
-.info-content .fw-bold { font-size: 1rem; }
+/* Info content - Better typography */
+.info-content { 
+  flex: 1; 
+  display: flex; 
+  flex-direction: column; 
+  gap: 0.75rem; 
+  font-size: 1rem; /* Dễ đọc trên desktop */
+}
+.info-content .fw-bold { 
+  font-size: 1.1rem; 
+  line-height: 1.3;
+}
 .text-danger { color: #ef4444 !important; }
 .text-info { color: #0ea5e9 !important; }
-.media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 0.75rem; margin: 0.75rem 0; }
-.media-item { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-.media-item img, .media-item video { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; cursor: pointer; transition: transform 0.15s; }
-.media-item img:hover, .media-item video:hover { transform: scale(1.05); }
-.media-del { position: absolute; top: -6px; right: -6px; background: #ef4444; color: white; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer; z-index: 10; }
-.media-add { aspect-ratio: 1; border: 2px dashed #cbd5e0; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #94a3b8; font-size: 24px; transition: border-color 0.2s; }
-.media-add:hover { border-color: #3b82f6; }
-.media-grid-mini { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
-.media-item-mini { width: 50px; height: 50px; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-.media-item-mini img, .media-item-mini video { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; cursor: pointer; }
-.date-pill { background: #10b981; color: white; padding: 0.5rem 1rem; border-radius: 20px; font-weight: bold; font-size: 0.9rem; }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-/* Modal styles (giữ nguyên) */
-.media-modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.9); display: flex; align-items: center; justify-content: center; z-index: 1000; cursor: pointer; }
-.media-modal-content { position: relative; max-width: 90vw; max-height: 90vh; background: #000; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.6); }
-.modal-media { max-width: 100%; max-height: 90vh; object-fit: contain; display: block; }
-.modal-close { position: absolute; top: 15px; right: 20px; background: rgba(0,0,0,0.5); color: white; border: none; font-size: 32px; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; z-index: 10; }
-.modal-close:hover { background: rgba(255,0,0,0.8); }
+/* Media grid */
+.media-grid { 
+  display: grid; 
+  grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); 
+  gap: 0.75rem; 
+  margin: 1rem 0; 
+}
+.media-item { 
+  position: relative; 
+  aspect-ratio: 1; 
+  border-radius: 8px; 
+  overflow: hidden; 
+  box-shadow: 0 2px 4px rgba(0,0,0,0.08); 
+}
+.media-item img, .media-item video { 
+  width: 100%; 
+  height: 100%; 
+  object-fit: cover; 
+  border-radius: 8px; 
+  cursor: pointer; 
+  transition: transform 0.2s ease; 
+}
+.media-item img:hover, .media-item video:hover { 
+  transform: scale(1.05); 
+}
+.media-del { 
+  position: absolute; 
+  top: -6px; 
+  right: -6px; 
+  background: #ef4444; 
+  color: white; 
+  border-radius: 50%; 
+  width: 20px; 
+  height: 20px; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  font-size: 12px; 
+  cursor: pointer; 
+  z-index: 10; 
+  font-weight: bold;
+}
+.media-add { 
+  aspect-ratio: 1; 
+  border: 2px dashed #cbd5e0; 
+  border-radius: 8px; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  cursor: pointer; 
+  color: #94a3b8; 
+  font-size: 24px; 
+  transition: all 0.2s ease; 
+}
+.media-add:hover { 
+  border-color: #3b82f6; 
+  background: #eff6ff;
+  color: #3b82f6;
+}
+.media-grid-mini { 
+  display: flex; 
+  flex-wrap: wrap; 
+  gap: 0.5rem; 
+  margin-top: 0.5rem; 
+}
+.media-item-mini { 
+  width: 50px; 
+  height: 50px; 
+  border-radius: 6px; 
+  overflow: hidden; 
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
+}
+.media-item-mini img, .media-item-mini video { 
+  width: 100%; 
+  height: 100%; 
+  object-fit: cover; 
+  border-radius: 6px; 
+  cursor: pointer; 
+}
+.date-pill { 
+  background: linear-gradient(135deg, #10b981, #059669); 
+  color: white; 
+  padding: 0.5rem 1rem; 
+  border-radius: 20px; 
+  font-weight: 600; 
+  font-size: 0.9rem; 
+  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
+}
+@keyframes fadeIn { 
+  from { opacity: 0; transform: translateY(10px); } 
+  to { opacity: 1; transform: translateY(0); } 
+}
+
+/* Modal styles - Improved for all devices */
+.media-modal-overlay { 
+  position: fixed; 
+  inset: 0; 
+  background: rgba(0, 0, 0, 0.9); 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  z-index: 1000; 
+  cursor: pointer; 
+}
+.media-modal-content { 
+  position: relative; 
+  max-width: 95vw; 
+  max-height: 95vh; 
+  background: #000; 
+  border-radius: 12px; 
+  overflow: hidden; 
+  box-shadow: 0 20px 40px rgba(0,0,0,0.6); 
+}
+.modal-media { 
+  max-width: 100%; 
+  max-height: 95vh; 
+  object-fit: contain; 
+  display: block; 
+}
+.modal-close { 
+  position: absolute; 
+  top: 15px; 
+  right: 15px; 
+  background: rgba(0,0,0,0.5); 
+  color: white; 
+  border: none; 
+  font-size: 28px; 
+  width: 40px; 
+  height: 40px; 
+  border-radius: 50%; 
+  cursor: pointer; 
+  z-index: 10; 
+}
+.modal-close:hover { 
+  background: rgba(255,0,0,0.8); 
+}
 .modal-xl { max-width: 1100px; }
 .modal-header.bg-success { background-color: #198754 !important; }
 .modal-header.bg-info { background-color: #17a2b8 !important; }
+.modal-header.bg-warning { background-color: #ffc107 !important; color: #000 !important; }
 .btn-close-white { filter: invert(1); }
 .btn-info { background-color: #17a2b8; border-color: #17a2b8; }
 .list-group-item-action:hover { background-color: #f8f9fa; }
 .spinner-border { width: 3rem; height: 3rem; }
 .list-group-item-warning { background-color: #fff3cd !important; border-left: 5px solid #ffc107 !important; }
 
-/* Responsive (3 nút loại ca + trạng thái stack dọc mobile) */
-@media (max-width: 1200px) { .case-strip { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); } }
+/* Tablet adjustments (769px - 1023px): 2 cột cards, control-actions 2 cột */
+@media (min-width: 769px) and (max-width: 1023px) { 
+  .case-strip { 
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); /* 2 cột */
+    gap: 1rem; 
+  }
+  .control-actions { 
+    grid-template-columns: 1fr 1fr; /* 2 cột actions */
+  }
+  .control-actions input { 
+    grid-column: span 2; /* Search span 2 */
+  }
+  .toggle-row, .status-toggle-row { 
+    gap: 0.5rem; 
+  }
+  .section-title { 
+    font-size: 1.4rem; 
+  }
+}
+
+/* Mobile-specific improvements (≤768px): Less cluttered, larger touch targets */
 @media (max-width: 768px) { 
-  .case-strip { grid-template-columns: 1fr; gap: 1rem; } 
-  .toggle-row, .status-toggle-row { flex-direction: column; gap: 0.5rem; } /* Cả 6 nút dọc mobile, nhưng OUTSIDE chỉ 3 nút loại ca */
-  .page-wrap { padding: 1rem 0.5rem; } 
-  .control-actions { grid-template-columns: 1fr; } 
-  .info-content { font-size: 0.85rem; } 
+  .page-wrap { 
+    padding: 1rem 0.5rem; 
+    background: #f8fafc; /* Lighter bg for mobile */
+  }
+  .layout { 
+    gap: 1rem; 
+    max-width: 100%; 
+  }
+  .control-card, .cases-section { 
+    padding: 1rem; 
+    border-radius: 16px; 
+    margin-bottom: 1rem; 
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08); /* Softer shadow */
+  }
+  
+  /* Buttons stack vertical, full width, larger padding for touch */
+  .toggle-row, .status-toggle-row { 
+    flex-direction: column; 
+    gap: 0.75rem; 
+  }
+  .toggle-row button, .status-toggle-row button { 
+    flex: none; 
+    width: 100%; 
+    padding: 1rem; 
+    font-size: 1rem; 
+    border-radius: 12px; 
+    min-height: 50px; /* Larger touch target */
+    justify-content: flex-start; /* Icon left, text right */
+  }
+  
+  /* Control body - More vertical space, compact actions */
+  .control-body { 
+    padding: 1rem; 
+    gap: 1rem; 
+  }
+  .control-actions { 
+    grid-template-columns: 1fr; /* 1 cột actions trên mobile */
+    gap: 0.75rem; 
+  }
+  .control-actions input { 
+    grid-column: span 1; 
+    font-size: 1rem; 
+    padding: 0.875rem; 
+  }
+  .control-actions button { 
+    padding: 0.875rem; 
+    font-size: 1rem; 
+    border-radius: 10px; 
+  }
+  
+  /* Textarea compact on mobile */
+  textarea { 
+    rows: 1; /* Giảm rows để đỡ chiếm chỗ */
+    font-size: 1rem; 
+    padding: 0.75rem; 
+  }
+  
+  /* Section title larger and centered */
+  .section-title { 
+    font-size: 1.25rem; 
+    text-align: center; 
+    padding: 0 1rem; 
+  }
+  .section-header { 
+    margin-bottom: 1.25rem; 
+  }
+  
+  /* Case strip - Single column, more gap */
+  .case-strip { 
+    grid-template-columns: 1fr; /* 1 cột rõ ràng trên mobile */
+    gap: 1.25rem; 
+  }
+  
+  /* Cards - Full width, increased padding, better text wrapping */
+  .card-body { 
+    padding: 1.25rem; 
+  }
+  .info-content { 
+    font-size: 1rem; /* Lớn hơn cho dễ đọc trên mobile */
+    gap: 0.75rem; 
+  }
+  .info-content .fw-bold { 
+    font-size: 1.1rem; 
+    word-break: break-word; /* Wrap long names/addresses */
+  }
+  .small { 
+    font-size: 0.9rem; 
+  }
+  
+  /* Media grid - Fewer columns on mobile */
+  .media-grid { 
+    grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); 
+    gap: 0.5rem; 
+    margin: 0.75rem 0; 
+  }
+  .media-item { 
+    min-width: 50px; 
+  }
+  
+  /* Input groups - Full width, larger */
+  .input-group { 
+    gap: 0.5rem; 
+  }
+  .input-group input, .input-group button { 
+    font-size: 0.95rem; 
+    padding: 0.75rem; 
+  }
+  
+  /* Badges and icons - Slightly larger */
+  .badge { 
+    font-size: 0.85rem; 
+    padding: 0.375rem 0.625rem; 
+  }
+  .btn-sm { 
+    padding: 0.5rem 0.75rem; 
+    font-size: 0.9rem; 
+    min-height: 36px; 
+  }
+  
+  /* D-flex gaps - Reduce clutter */
+  .d-flex { 
+    gap: 0.5rem; 
+  }
+  .gap-2 { 
+    gap: 0.75rem; 
+  }
+  .gap-3 { 
+    gap: 1rem; 
+  }
+  .mb-3, .mt-3 { 
+    margin-bottom: 1rem !important; 
+    margin-top: 1rem !important; 
+  }
+  
+  /* Modal - Full screen on small mobile */
+  @media (max-width: 480px) { 
+    .modal-dialog { 
+      margin: 0.5rem; 
+      max-width: calc(100% - 1rem); 
+    }
+    .modal-content { 
+      border-radius: 12px; 
+    }
+    .media-modal-content { 
+      max-width: 100vw; 
+      max-height: 100vh; 
+      border-radius: 0; 
+    }
+    .modal-close { 
+      font-size: 24px; 
+      width: 36px; 
+      height: 36px; 
+    }
+  }
+}
+
+/* Large desktop - Ensure 3+ columns */
+@media (min-width: 1200px) { 
+  .case-strip { 
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); /* Rộng hơn cho màn lớn */
+  }
+  .control-actions { 
+    grid-template-columns: 1fr 1fr 1fr; 
+  }
 }
 </style>
