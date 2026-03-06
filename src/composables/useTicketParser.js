@@ -1,12 +1,11 @@
 // src/composables/useTicketParser.js
 import { ref } from 'vue'
-import { getSupabase } from '@/lib/supabase'  // giả sử anh đang import như vậy
+import { getSupabase } from '@/lib/supabase'
 
 export function useTicketParser(onSuccess = () => {}) {
   const rawInput = ref('')
   const supabase = getSupabase()
 
-  // Các hằng số để dễ maintain
   const DEFAULTS = {
     NAME: 'Khách chưa tên',
     PHONE: '',
@@ -45,15 +44,102 @@ export function useTicketParser(onSuccess = () => {}) {
       }
     }
 
-    // Ưu tiên: Mới > Cũ > Default
     return addressNew || addressOld || addressDefault || DEFAULTS.ADDRESS
   }
 
+  // ✅ Parse CSVN - format có label rõ ràng
+  const handleParseCsvn = async (text) => {
+    // ticketId
+    const ticketMatch = text.match(/Mã Thông Tin[:\s]+([A-Z0-9]+)/i)
+    const ticketId = ticketMatch ? ticketMatch[1].trim() : null
+    if (!ticketId) {
+      alert('Không tìm thấy Mã Thông Tin CSVN!')
+      return
+    }
+
+    // Check trùng
+    const { data: exist } = await supabase
+      .from('customers').select('ticketId').eq('ticketId', ticketId).maybeSingle()
+    if (exist) {
+      console.log('Ca đã tồn tại:', ticketId)
+      rawInput.value = ''
+      return
+    }
+
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+
+    // name
+    const nameMatch = text.match(/Tên KH[:\s]+(.+)/i)
+    const name = nameMatch ? nameMatch[1].trim() : DEFAULTS.NAME
+
+    // phone
+    const phoneMatch = text.match(/SĐT[:\s]+([\d]+)/i)
+    const phone = phoneMatch ? phoneMatch[1].trim() : DEFAULTS.PHONE
+
+    // address: ưu tiên địa chỉ mới, fallback địa chỉ cũ
+    const addressNewMatch = text.match(/Địa chỉ[:\s]+(?!cũ)(.+)/i)
+    const addressOldMatch = text.match(/Địa chỉ cũ[:\s]+(.+)/i)
+    const address = (addressNewMatch ? addressNewMatch[1].trim() : null)
+      || (addressOldMatch ? addressOldMatch[1].trim() : DEFAULTS.ADDRESS)
+
+    // model
+    const modelMatch = text.match(/Model[:\s]+(.+)/i)
+    const model = modelMatch ? modelMatch[1].trim() : DEFAULTS.MODEL
+
+    // issue
+    const issueMatch = text.match(/Tình Trạng[:\s]+(.+)/i)
+    const issue = issueMatch ? issueMatch[1].trim() : DEFAULTS.ISSUE
+
+    // serial
+    const serialMatch = text.match(/Số Serial[:\s]+(.+)/i)
+    const serial = serialMatch ? serialMatch[1].trim() : ''
+
+    // branch (Trạm)
+    const branchMatch = text.match(/Trạm[:\s]+(.+)/i)
+    const branch = branchMatch ? branchMatch[1].trim() : ''
+
+    const newCustomer = {
+      ticketId,
+      name,
+      phone,
+      model,
+      address,
+      issue,
+      media: [],
+      folderDrive: '',
+      status: 0,
+      replacedPart: DEFAULTS.REPLACED_PART,
+      doneDate: null,
+      createdAt: new Date().toISOString(),
+      warehouse: '',
+      serial,
+      branch
+    }
+
+    console.log('📋 Ca CSVN sẽ lưu:', JSON.stringify(newCustomer, null, 2))
+
+    const { error } = await supabase.from('customers').insert([newCustomer])
+    if (!error) {
+      console.log(`✅ Thêm ca CSVN thành công: ${ticketId}`)
+      rawInput.value = ''
+      onSuccess()
+    } else {
+      console.error('Lỗi insert CSVN:', error)
+      alert('Lỗi lưu ca CSVN: ' + error.message)
+    }
+  }
+
+  // ✅ Parse ASVN TDP - giữ nguyên
   const handleParse = async (manualText = null) => {
     const text = (manualText || rawInput.value || '').trim()
     if (!text) return
 
-    // Bỏ qua code hoặc log rác
+    // Nhận dạng CSVN → chuyển sang handleParseCsvn
+    if (text.includes('Mã Thông Tin') || text.match(/CSVN\d+/i)) {
+      await handleParseCsvn(text)
+      return
+    }
+
     if (text.includes('MutationObserver') || text.includes('const ') || text.includes('==')) {
       rawInput.value = ''
       return
@@ -62,14 +148,9 @@ export function useTicketParser(onSuccess = () => {}) {
     const ticketMatch = text.match(/ASVN[0-9]+/i)
     const ticketId = ticketMatch ? ticketMatch[0].toUpperCase() : 'ASVN-TRỐNG'
 
-    // Check trùng lặp
     if (ticketId !== 'ASVN-TRỐNG') {
       const { data: exist } = await supabase
-        .from('customers')
-        .select('ticketId')
-        .eq('ticketId', ticketId)
-        .maybeSingle()
-
+        .from('customers').select('ticketId').eq('ticketId', ticketId).maybeSingle()
       if (exist) {
         console.log(`Ca đã tồn tại: ${ticketId}`)
         rawInput.value = ''
@@ -79,7 +160,6 @@ export function useTicketParser(onSuccess = () => {}) {
 
     const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
 
-    // Extract các field
     const phone = extractField(lines,
       ['số điện thoại', 'phone', 'sdt', 'tel'],
       line => line.match(/(?:0|\+84)[3-9][0-9\s.-]{8,10}/)?.[0].replace(/[^0-9+]/g, '')
@@ -90,7 +170,6 @@ export function useTicketParser(onSuccess = () => {}) {
       line => line.replace(/Customer Name:?|Tên khách hàng?:?|Khách hàng?:?|Tên?:?/i, '').trim()
     ) || DEFAULTS.NAME
 
-    // Nếu không lấy được tên → fallback pattern A / Chị / Anh
     let finalName = name
     if (finalName === DEFAULTS.NAME) {
       const fallback = text.match(/(?:A |Chị |Anh |Bác |Ông |Bà |Khách )([^|\n,]+)/i)
@@ -124,16 +203,15 @@ export function useTicketParser(onSuccess = () => {}) {
       status: 0,
       replacedPart: DEFAULTS.REPLACED_PART,
       doneDate: null,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      warehouse: 'TDP'
     }
 
     const { error } = await supabase.from('customers').insert([newCustomer])
-
     if (!error) {
       console.log(`✅ Thêm ca thành công: ${ticketId}`)
-      console.log('Địa chỉ final:', address)
       rawInput.value = ''
-      onSuccess()  // gọi loadData() hoặc refresh
+      onSuccess()
     } else {
       console.error('Lỗi insert:', error)
     }
