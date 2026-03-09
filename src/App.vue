@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import * as XLSX from 'xlsx'
 import { getSupabase } from './lib/supabase'
 
@@ -20,6 +20,7 @@ const {
 } = useAuth()
 
 const showAdminPanel = ref(false)
+const showStats = ref(false)
 
 // ── SUPABASE ──────────────────────────────────────────────────
 const supabase = getSupabase()
@@ -149,12 +150,38 @@ const closeMediaModal = () => { showModal.value = false; modalMedia.value = null
 
 // ── NAVIGATION ────────────────────────────────────────────────
 const backToTypeToggle = () => { showWarehouse.value = false; currentType.value = 'ASVN' }
-const selectWarehouse  = (wh) => { currentWarehouse.value = wh; searchQuery.value = '' }
+const selectWarehouse  = (wh) => {
+  // Nhân viên có kho cố định không được đổi
+  if (isNhanVien.value && userWarehouse.value && wh !== userWarehouse.value) return
+  currentWarehouse.value = wh; searchQuery.value = ''
+}
 const selectType = (type) => {
   currentType.value = type; showTab.value = 'danglam'; outsideTab.value = 'danglam'
   searchQuery.value = ''; historySearchQuery.value = ''
   if (type === 'ASVN') showWarehouse.value = true
 }
+
+// ── THỐNG KÊ ─────────────────────────────────────────────────
+const stats = computed(() => {
+  const asvn = customers.value.filter(c => c.ticketId?.startsWith('ASVN'))
+  const tdp  = asvn.filter(c => c.warehouse === 'TDP')
+  const nv   = asvn.filter(c => c.warehouse === 'NV')
+  const today = new Date().toLocaleDateString('vi-VN', { day:'2-digit', month:'2-digit', year:'numeric' })
+  return {
+    tongTat:   asvn.filter(c => c.status === 2).length,
+    dangLamAll: asvn.filter(c => c.status === 0).length,
+    choLKAll:  asvn.filter(c => c.status === 1).length,
+    tdpDangLam: tdp.filter(c => c.status === 0).length,
+    tdpChoLK:  tdp.filter(c => c.status === 1).length,
+    tdpXong:   tdp.filter(c => c.status === 2).length,
+    nvDangLam: nv.filter(c => c.status === 0).length,
+    nvChoLK:   nv.filter(c => c.status === 1).length,
+    nvXong:    nv.filter(c => c.status === 2).length,
+    hoanThanhHomNay: asvn.filter(c => c.status === 2 && c.doneDate === today).length,
+    csvnTong:  customers.value.filter(c => c.ticketId?.startsWith('CSVN')).length,
+    ngoaiTong: customers.value.filter(c => c.ticketId?.startsWith('NGOAI')).length,
+  }
+})
 
 // ── COMPUTED ──────────────────────────────────────────────────
 const filteredCustomers = computed(() => {
@@ -368,8 +395,33 @@ onMounted(async () => {
   await initAuth()
   if (isLoggedIn.value) {
     await loadData()
-    if (isNhanVien.value && userWarehouse.value) currentWarehouse.value = userWarehouse.value
+    // Set kho mặc định theo quyền user
+    if (isNhanVien.value && userWarehouse.value) {
+      currentWarehouse.value = userWarehouse.value
+    } else {
+      currentWarehouse.value = 'TDP'
+    }
   }
+  // Watch: reset kho khi user thay đổi (login/logout)
+  watch(isLoggedIn, async (val) => {
+    if (val) {
+      await loadData()
+      if (isNhanVien.value && userWarehouse.value) {
+        currentWarehouse.value = userWarehouse.value
+      } else {
+        currentWarehouse.value = 'TDP'
+      }
+    }
+  })
+
+  // Realtime: tự động cập nhật khi có thay đổi từ thiết bị khác
+  const realtimeChannel = supabase
+    .channel('customers-realtime')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => {
+      loadData()
+    })
+    .subscribe()
+
   const channel = new BroadcastChannel('zalo_bridge')
   channel.onmessage = (event) => { if (event.data) customHandleParse(event.data) }
   window.addEventListener('focus', async () => {
@@ -412,11 +464,52 @@ onMounted(async () => {
       <div class="topbar-right">
         <span class="topbar-user">{{ userName }}</span>
         <button v-if="isAdmin"
+          @click="showStats = !showStats"
+          :class="['btn-topbar', showStats ? 'btn-topbar--active' : '']">
+          📊 Thống kê
+        </button>
+        <button v-if="isAdmin"
           @click="showAdminPanel = !showAdminPanel"
           :class="['btn-topbar', showAdminPanel ? 'btn-topbar--active' : '']">
           👥 Quản lý TK
         </button>
         <button @click="logout" class="btn-topbar btn-topbar--logout">🚪 Thoát</button>
+      </div>
+    </div>
+
+    <!-- STATS PANEL -->
+    <div v-if="showStats && isAdmin" class="stats-wrap">
+      <div class="stats-grid">
+        <div class="stat-card stat-blue">
+          <div class="stat-num">{{ stats.dangLamAll }}</div>
+          <div class="stat-label">⚡ Đang làm</div>
+        </div>
+        <div class="stat-card stat-yellow">
+          <div class="stat-num">{{ stats.choLKAll }}</div>
+          <div class="stat-label">⏳ Chờ linh kiện</div>
+        </div>
+        <div class="stat-card stat-green">
+          <div class="stat-num">{{ stats.tongTat }}</div>
+          <div class="stat-label">✅ Tổng hoàn thành</div>
+        </div>
+        <div class="stat-card stat-teal">
+          <div class="stat-num">{{ stats.hoanThanhHomNay }}</div>
+          <div class="stat-label">🗓️ Xong hôm nay</div>
+        </div>
+      </div>
+      <div class="stats-row2">
+        <div class="stat-wh">
+          <div class="stat-wh-title">🏭 Kho TDP</div>
+          <div class="stat-wh-row"><span class="s-blue">{{ stats.tdpDangLam }} đang làm</span> · <span class="s-yellow">{{ stats.tdpChoLK }} chờ LK</span> · <span class="s-green">{{ stats.tdpXong }} xong</span></div>
+        </div>
+        <div class="stat-wh">
+          <div class="stat-wh-title">🏭 Kho NV</div>
+          <div class="stat-wh-row"><span class="s-blue">{{ stats.nvDangLam }} đang làm</span> · <span class="s-yellow">{{ stats.nvChoLK }} chờ LK</span> · <span class="s-green">{{ stats.nvXong }} xong</span></div>
+        </div>
+        <div class="stat-wh">
+          <div class="stat-wh-title">📋 Khác</div>
+          <div class="stat-wh-row"><span class="s-blue">CSVN: {{ stats.csvnTong }}</span> · <span class="s-blue">Ca ngoài: {{ stats.ngoaiTong }}</span></div>
+        </div>
       </div>
     </div>
 
@@ -581,7 +674,7 @@ onMounted(async () => {
                       </div>
                       <div class="info-content">
                         <div class="fw-bold text-dark">👤 {{ item.name }}</div>
-                        <div class="fw-bold text-secondary mb-1">📞 {{ item.phone }}</div>
+                        <a :href="'tel:'+item.phone" @click.stop class="fw-bold text-secondary mb-1 d-block text-decoration-none">📞 {{ item.phone }}</a>
                         <div class="small text-muted mb-1">📺 {{ item.model }}</div>
                         <div class="small text-muted mb-2">📍 {{ item.address }}</div>
                         <div class="text-danger small fw-bold mb-2">⚠️ {{ item.issue }}</div>
@@ -615,7 +708,7 @@ onMounted(async () => {
                       </div>
                       <div class="info-content">
                         <div class="fw-bold text-dark">👤 {{ item.name }}</div>
-                        <div class="fw-bold text-secondary mb-1">📞 {{ item.phone }}</div>
+                        <a :href="'tel:'+item.phone" @click.stop class="fw-bold text-secondary mb-1 d-block text-decoration-none">📞 {{ item.phone }}</a>
                         <div class="small text-muted mb-1">📺 {{ item.model }}</div>
                         <div class="small text-muted mb-2">📍 {{ item.address }}</div>
                         <div class="text-danger small fw-bold mb-2">⚠️ {{ item.issue }}</div>
@@ -672,7 +765,7 @@ onMounted(async () => {
                         <button v-if="isAdmin" @click.stop="deleteCustomer(item.id)" class="btn btn-sm text-danger opacity-50">🗑️</button>
                       </div>
                       <div class="fw-bold text-dark">👤 {{ item.name }}</div>
-                      <div class="fw-bold text-secondary mb-1">📞 {{ item.phone }}</div>
+                      <a :href="'tel:'+item.phone" @click.stop class="fw-bold text-secondary mb-1 d-block text-decoration-none">📞 {{ item.phone }}</a>
                       <div class="small text-muted mb-1">📺 {{ item.model }}</div>
                       <div class="text-danger small fw-bold mb-1">⚠️ {{ item.issue }}</div>
                       <div class="text-info small fw-bold">🔧 {{ item.replacedPart || 'Chưa có' }}</div>
@@ -697,7 +790,7 @@ onMounted(async () => {
                         <button v-if="isAdmin" @click.stop="deleteCustomer(item.id)" class="btn btn-sm text-danger opacity-50">🗑️</button>
                       </div>
                       <div class="fw-bold text-dark">👤 {{ item.name }}</div>
-                      <div class="fw-bold text-secondary mb-1">📞 {{ item.phone }}</div>
+                      <a :href="'tel:'+item.phone" @click.stop class="fw-bold text-secondary mb-1 d-block text-decoration-none">📞 {{ item.phone }}</a>
                       <div class="small text-muted mb-1">📺 {{ item.model }}</div>
                       <div class="text-danger small fw-bold mb-1">⚠️ {{ item.issue }}</div>
                       <div class="text-info small fw-bold">🔧 {{ item.replacedPart || 'Chưa có' }}</div>
@@ -722,7 +815,7 @@ onMounted(async () => {
                         <button v-if="isAdmin" @click.stop="deleteCustomer(item.id)" class="btn btn-sm text-danger opacity-50">🗑️</button>
                       </div>
                       <div class="fw-bold text-dark">👤 {{ item.name }}</div>
-                      <div class="fw-bold text-secondary mb-1">📞 {{ item.phone }}</div>
+                      <a :href="'tel:'+item.phone" @click.stop class="fw-bold text-secondary mb-1 d-block text-decoration-none">📞 {{ item.phone }}</a>
                       <div class="small text-muted mb-1">📺 {{ item.model }}</div>
                       <div class="text-danger small fw-bold mb-1">⚠️ {{ item.issue }}</div>
                       <div class="text-info small fw-bold">🔧 {{ item.replacedPart || 'Chưa có' }}</div>
@@ -755,7 +848,7 @@ onMounted(async () => {
               <div class="row">
                 <div class="col-md-5">
                   <h5 class="mb-1 fw-bold">{{ selectedCustomer.name }}</h5>
-                  <p class="text-secondary fw-bold mb-2">📞 {{ selectedCustomer.phone }}</p>
+                  <a :href="'tel:'+selectedCustomer.phone" class="text-secondary fw-bold mb-2 d-block text-decoration-none">📞 {{ selectedCustomer.phone }}</a>
                   <p v-if="selectedCustomer.warehouse"><strong>Kho:</strong> {{ selectedCustomer.warehouse }}</p>
                   <p v-if="selectedCustomer.serial"><strong>Serial:</strong> {{ selectedCustomer.serial }}</p>
                   <p v-if="selectedCustomer.branch"><strong>Chi nhánh:</strong> {{ selectedCustomer.branch }}</p>
@@ -840,7 +933,7 @@ onMounted(async () => {
               <div class="row">
                 <div class="col-md-5">
                   <h5 class="mb-1 fw-bold">{{ selectedOutside.name }}</h5>
-                  <p class="text-secondary fw-bold mb-3">📞 {{ selectedOutside.phone }}</p>
+                  <a :href="'tel:'+selectedOutside.phone" class="text-secondary fw-bold mb-3 d-block text-decoration-none">📞 {{ selectedOutside.phone }}</a>
                   <p><strong>Model:</strong> {{ selectedOutside.model }}</p>
                   <p><strong>Lỗi:</strong> <span class="text-danger fw-bold">{{ selectedOutside.issue }}</span></p>
                   <p><strong>Ngày tạo:</strong> {{ formatDate(selectedOutside.createdAt) }}</p>
@@ -1118,7 +1211,7 @@ onMounted(async () => {
 
 /* ── Buttons/Toggles ──────────────────────────────────────── */
 .toggle-row, .status-toggle-row, .warehouse-toggle-row { display: flex; gap: 0.75rem; margin-bottom: 1rem; }
-.toggle-row button, .status-toggle-row button { flex: 1; padding: 0.875rem 1rem; border-radius: 12px; font-size: 1rem; font-weight: 600; transition: all .3s; box-shadow: 0 2px 4px rgba(0,0,0,.08); border: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
+.toggle-row button, .status-toggle-row button { flex: 1; padding: 0.875rem 1rem; border-radius: 12px; font-size: 1rem; font-weight: 600; transition: all .3s; box-shadow: 0 2px 4px rgba(0,0,0,.08); border: 2px solid #cbd5e1; background: #f1f5f9; color: #475569; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
 .toggle-row button:hover, .status-toggle-row button:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.15); }
 .warehouse-toggle-row { align-items: center; }
 .gear-container { flex-shrink: 0; margin-right: 0.5rem; }
@@ -1190,5 +1283,30 @@ onMounted(async () => {
 }
 @media (min-width: 1200px) {
   .case-strip { grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); }
+}
+/* ── Stats Panel ──────────────────────────────────────────── */
+.stats-wrap { max-width: 1450px; margin: 0 auto; background: #fff; border-bottom: 2px solid #e2e8f0; padding: 1rem 1.5rem; }
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 0.75rem; }
+.stat-card { border-radius: 14px; padding: 1rem; text-align: center; }
+.stat-blue   { background: #dbeafe; }
+.stat-yellow { background: #fef3c7; }
+.stat-green  { background: #d1fae5; }
+.stat-teal   { background: #ccfbf1; }
+.stat-num  { font-size: 2rem; font-weight: 800; line-height: 1; }
+.stat-blue .stat-num   { color: #1d4ed8; }
+.stat-yellow .stat-num { color: #92400e; }
+.stat-green .stat-num  { color: #065f46; }
+.stat-teal .stat-num   { color: #0f766e; }
+.stat-label { font-size: 0.78rem; font-weight: 600; color: #475569; margin-top: 0.25rem; }
+.stats-row2 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
+.stat-wh { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 0.65rem 1rem; }
+.stat-wh-title { font-weight: 700; font-size: 0.85rem; color: #1e293b; margin-bottom: 0.3rem; }
+.stat-wh-row { font-size: 0.8rem; }
+.s-blue   { color: #1d4ed8; font-weight: 600; }
+.s-yellow { color: #92400e; font-weight: 600; }
+.s-green  { color: #065f46; font-weight: 600; }
+@media (max-width: 480px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .stats-row2 { grid-template-columns: 1fr; }
 }
 </style>
