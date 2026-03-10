@@ -47,7 +47,87 @@ const customHandleParse = async (text) => {
   if (!text || !text.trim()) return
   if (isParsing.value) return
   isParsing.value = true
-  try {
+  const _run = async () => {
+    // ── Nhánh TDP: format bảng "số sửa chữa: ASVN..." ──────────
+    if (/số sửa chữa\s*:/i.test(text)) {
+      const ticketIdTDP = text.match(/số sửa chữa\s*:\s*(ASVN\d+)/i)?.[1]?.toUpperCase()
+      if (!ticketIdTDP) { showToast('Không tìm thấy mã ASVN!', 'error'); return }
+      const { data: existTDP } = await supabase.from('customers').select('ticketId').eq('ticketId', ticketIdTDP).maybeSingle()
+      if (existTDP) { showToast(`Ca ${ticketIdTDP} đã tồn tại!`, 'warning'); rawInput.value = ''; return }
+
+      const modelTDP   = text.match(/^model\s*:\s*(.+?)$/im)?.[1]?.trim() || 'Xiaomi TV'
+      const serialTDP  = text.match(/^Serial\s*:\s*(.+?)$/im)?.[1]?.trim() || ''
+      const nameTDP    = text.match(/Tên khách hàng\s*:\s*(.+?)$/im)?.[1]?.trim() || 'Khách TDP'
+      const rawPhTDP   = text.match(/Số điện thoại\s*:\s*([\+\d]+)/i)?.[1] || ''
+      const phoneTDP   = rawPhTDP.replace(/^\+84/, '0')
+      const addrRaw    = text.match(/Địa chỉ\s*:\s*(.+?)(?:\n|$)/i)?.[1] || ''
+      const addressTDP = addrRaw.replace(/\s*\(cũ\)\s*/gi, '').trim()
+      const issueRpt   = text.match(/Faulty description\s*:\s*(.+?)(?:\nA:|\nCS handle:|Note:|$)/is)?.[1]?.trim().replace(/\n/g,' ')
+      const issueField = text.match(/Hiện tượng\s*:\s*(.+?)(?:\n|$)/i)?.[1]?.trim()
+      const issueTDP   = issueRpt || issueField || 'Bảo hành TV'
+
+      const newCaTDP = {
+        ticketId: ticketIdTDP, name: nameTDP, phone: phoneTDP,
+        model: modelTDP, address: addressTDP, issue: issueTDP,
+        media: [], folderDrive: '', status: 0, replacedPart: 'Chưa có',
+        doneDate: null, createdAt: new Date().toISOString(),
+        warehouse: 'TDP', serial: serialTDP, branch: ''
+      }
+      const { error: errTDP } = await supabase.from('customers').insert([newCaTDP])
+      if (errTDP) showToast('Lỗi lưu ca TDP: ' + errTDP.message, 'error')
+      else { showToast(`✅ Đã lưu TDP: ${ticketIdTDP} - ${nameTDP}`, 'success'); await loadData() }
+      rawInput.value = ''
+      return
+    }
+
+    // ── Nhánh PSC: format "Số phiếu: ASVN" (không có VN-NV/NV-MSC) ──
+    if (/Số phiếu\s*:/i.test(text) || /\*\s*Họ tên\s*:/i.test(text)) {
+      const ticketPSC = text.match(/(?:Số phiếu|số sửa chữa)\s*:\s*(ASVN\d+)/i)?.[1]?.toUpperCase()
+        || text.match(/ASVN\d+/)?.[0]?.toUpperCase()
+      if (!ticketPSC) { showToast('Không tìm thấy mã ASVN!', 'error'); return }
+      const { data: existPSC } = await supabase.from('customers').select('ticketId').eq('ticketId', ticketPSC).maybeSingle()
+      if (existPSC) { showToast(`Ca ${ticketPSC} đã tồn tại!`, 'warning'); rawInput.value = ''; return }
+
+      // Tên: "* Họ tên:" → "Name: xxx Phone" (inline, không lấy cả đoạn Report person)
+      const namePSC = text.match(/\*\s*Họ tên\s*:\s*(.+?)$/im)?.[1]?.trim()
+        || text.match(/\bName\s*:\s*(.+?)(?=\s+Phone\s*Number|\s+Address|\n|$)/i)?.[1]?.trim() || 'Khách'
+      // SĐT
+      const rawPhPSC = text.match(/\*\s*Điện thoại\s*:\s*([\+\d]+)/i)?.[1]
+        || text.match(/Phone\s*Number\s*:\s*([\+\d]+)/i)?.[1] || ''
+      const phonePSC = rawPhPSC.replace(/^\+84/, '0')
+      // Địa chỉ: lấy phần ĐẦU TIÊN trước dấu ". " (bỏ địa chỉ phụ đứng sau)
+      const addrRawPSC = text.match(/\*\s*Địa chỉ\s*:\s*(.+?)(?=\n\s*\*|\n\s*Tên Đại|$)/is)?.[1]
+        || text.match(/\bAddress\s*:\s*(.+?)(?=\s*Faulty description|\s*CS handle|$)/is)?.[1] || ''
+      const addressPSC = addrRawPSC.replace(/\n/g,' ').replace(/\s+/g,' ').trim().split(/\.\s+/)[0].trim()
+      // Model: dòng riêng "Model:\nL55M6" ưu tiên hơn inline "Model: Mi TV P1 55""
+      const modelPSC = text.match(/^Model\s*:\s*\n\s*(.+?)$/im)?.[1]?.trim()
+        || text.match(/^Model\s*:\s*(.+?)$/im)?.[1]?.trim() || 'Xiaomi TV'
+      // Serial: dòng riêng → dính liền 'Số Serial:xxx' → inline SN:
+      const serialPSC = text.match(/Số Serial\s*:\s*\n\s*([^\n\s]+)/i)?.[1]
+        || text.match(/Số Serial\s*:([^\n\s]+)/i)?.[1]
+        || text.match(/(?:SN\s*or\s*IMEI|IMEI\s*\/\s*SN|SN)\s*:\s*([^\s\n]+)/i)?.[1] || ''
+      // Issue: Faulty description → dừng tại CS handle
+      const issuePSC = text.match(/Faulty description\s*:\s*(.+?)(?:\s*CS handle:|\n\n|\nSố phiếu|$)/is)?.[1]?.trim().replace(/\n/g,' ')
+        || text.match(/Hiện tượng\s*:\s*(.+?)(?:\n|$)/i)?.[1]?.trim() || 'Bảo hành TV'
+
+      // Kho: nếu text có "Số phiếu:" (portal NV) → NV, còn lại dùng tab đang đứng
+      const warehousePSC = /Số phiếu\s*:/i.test(text) ? 'NV' : currentWarehouse.value
+
+      const newCaPSC = {
+        ticketId: ticketPSC, name: namePSC, phone: phonePSC,
+        model: modelPSC, address: addressPSC, issue: issuePSC,
+        media: [], folderDrive: '', status: 0, replacedPart: 'Chưa có',
+        doneDate: null, createdAt: new Date().toISOString(),
+        warehouse: warehousePSC, serial: serialPSC, branch: ''
+      }
+      const { error: errPSC } = await supabase.from('customers').insert([newCaPSC])
+      if (errPSC) showToast('Lỗi lưu ca: ' + errPSC.message, 'error')
+      else { showToast(`✅ Đã lưu ${warehousePSC}: ${ticketPSC} - ${namePSC}`, 'success'); await loadData() }
+      rawInput.value = ''
+      return
+    }
+
+    // ── Nhánh NV: format report "VN-NV" hoặc "NV-MSC" ──────────
     if (!text.includes('VN-NV') && !text.includes('NV-MSC')) {
       await handleParse(text)
       rawInput.value = ''
@@ -59,20 +139,46 @@ const customHandleParse = async (text) => {
     const { data: exist } = await supabase.from('customers').select('ticketId').eq('ticketId', fullTicketId).maybeSingle()
     if (exist) { showToast(`Ca ${fullTicketId} đã tồn tại!`, 'warning'); rawInput.value = ''; return }
 
-    const nameLabelMatch = text.match(/^Tên khách hàng\s*:\s*(.+?)$/im)
-    const nameShortMatch = text.replace(fullTicketId, '').trim().match(/^((?:Anh|Chị|chị|Bác|bác|Ông|ông|Bà|bà|Chú|chú|Em|em|Cô|cô|A|C)\s+[^\s,|\n]+)/)
-    const name = (nameLabelMatch?.[1] || nameShortMatch?.[1] || 'Khách NV').trim()
-    const phoneMatch = text.match(/(?:Số điện thoại|Phone Number)\s*:\s*([\+\d]+)/i) || text.match(/(?<!\d)(?:\+84|0)[3-9][0-9]{8}(?!\d)/)
-    const phone = (phoneMatch?.[1] || phoneMatch?.[0] || '').replace(/^\+84/, '0')
-    const addressMatch = text.match(/^Địa chỉ\s*:\s*(.+?)$/im) || text.match(/Customer address\s*:\s*(.+?)(?:\n|$)/i) || text.match(/([^\n]+?(?:Quảng Nam|Đà Nẵng|QUẢNG NAM|ĐÀ NẴNG|Thành phố)[^\n]*)/i)
-    const address = (addressMatch?.[1] || 'Chưa bóc được địa chỉ').trim()
-    const modelMatch = text.match(/^model\s*:\s*(.+?)$/im) || text.match(/Product model\s*:\s*(.+?)(?:\n|$)/i) || text.match(/XIAOMI\s*-\s*(.+?)(?=\s*Serial|\s*VN-NV|\n)/i)
-    const model = (modelMatch?.[1] || 'Xiaomi TV').trim()
-    const serialMatch = text.match(/(?:IMEI\s*\/\s*SN|SN|Serial)\s*:\s*([A-Z0-9\/]+)/i)
+    // Tên: ưu tiên "* Họ tên:" → "Customer Name:" → prefix title
+    // ── TÊN: * Họ tên → Customer Name → Report person (lấy Anh/Chị...) → prefix title
+    const nameHoTen  = text.match(/\*\s*Họ tên\s*:\s*(.+?)$/im)
+    const nameCust   = text.match(/Customer Name\s*:\s*(.+?)(?:\s+Customer|\n|$)/i)
+    const nameReport = text.match(/Report\s*[Pp]erson\s*:.*?((?:Anh|Chị|chị|Bác|bác|Ông|ông|Bà|bà|Chú|chú|Em|em|Cô|cô)\s+[^\s\-,\n(]+)/i)
+    const nameShort  = text.replace(fullTicketId, '').trim().match(/^((?:Anh|Chị|chị|Bác|bác|Ông|ông|Bà|bà|Chú|chú|Em|em|Cô|cô)\s+[^\s,|\n(]+)/)
+    const name = (nameHoTen?.[1] || nameCust?.[1] || nameReport?.[1] || nameShort?.[1] || 'Khách NV').trim()
+
+    // ── SĐT: * Điện thoại → Customer Phone → Report person (số đầu) → bất kỳ số nào
+    const phoneLine  = text.match(/\*\s*Điện thoại\s*:\s*([\+\d]+)/i)
+    const phoneCust  = text.match(/Customer Phone\s*:\s*([\+\d]+)/i)
+    const phoneReport = text.match(/Report\s*[Pp]erson\s*:\s*([\+\d]+)/i)
+    const phoneAny   = text.match(/(?<!\d)(?:\+84|0)[3-9][0-9]{8}(?!\d)/)
+    const rawPhone   = phoneLine?.[1] || phoneCust?.[1] || phoneReport?.[1] || phoneAny?.[0] || ''
+    const phone = rawPhone.replace(/^\+84/, '0')
+
+    // ── ĐỊA CHỈ: * Địa chỉ → Adress/Address + cũ → Customer Address → tỉnh/thành
+    const addrFull   = text.match(/\*\s*Địa chỉ\s*:\s*(.+?)(?=\n\s*\*|\n\s*Điện thoại|\n\s*Tên|\n\s*Mail|$)/is)
+    const addrCu     = text.match(/[Aa]d+ress\s*:.*?(?:\+\s*c[uũ]\s*:)?\s*(.+?)(?:\s*-\s*Faulty|\s*-\s*CS\s*handle|$)/is)
+    const addrCust   = text.match(/Customer [Aa]d+ress\s*:\s*(.+?)(?:\n|$)/i)
+    const addrCity   = text.match(/([^\n]+?(?:Quảng Nam|Đà Nẵng|QUẢNG NAM|ĐÀ NẴNG|tỉnh|Huyện)[^\n]*)/i)
+    const rawAddr    = addrFull?.[1] || addrCu?.[1] || addrCust?.[1] || addrCity?.[1] || 'Chưa bóc được địa chỉ'
+    const address    = rawAddr.replace(/^\+?\s*c[uũ]\s*:\s*/i, '').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
+
+    // ── MODEL: "- Model: X" inline → dòng riêng "Model:\nX" → fallback
+    const modelInline = text.match(/-\s*Model\s*:\s*(.+?)(?:\s*-\s*SN|\s*-\s*Adress|\s*-\s*Faulty|\n|$)/i)
+    const modelDesc   = text.match(/Model\s*:\s*(Xiaomi[^\n\r\-]+?)(?:\n|SN:|$)/i)
+    const modelLine   = text.match(/^[Mm]odel\s*:\s*(.+?)$/im)
+    const model = (modelInline?.[1] || modelDesc?.[1] || modelLine?.[1] || 'Xiaomi TV').trim()
+
+    // ── SERIAL: "SN or IMEI: X" → "IMEI/SN: X" → "SN: X" → "Số Serial:\nX"
+    const serialMatch = text.match(/(?:SN\s*or\s*IMEI|IMEI\s*[\/|]\s*SN|SN\s*or\s*SN)\s*:\s*([^\s\-]+)/i)
+      || text.match(/(?:IMEI\s*\/\s*SN|SN\s*:|Serial\s*:)\s*([A-Z0-9\/\-]+)/i)
+      || text.match(/Số Serial\s*:\s*\n?\s*([^\n\s]+)/i)
     const serial = serialMatch?.[1]?.trim() || ''
+
     const branchMatch = text.match(/VN-NV-MSC-[^\s,\n]+/i)
     const branch = branchMatch?.[0]?.trim() || 'VN-NV-MSC-Đà Nẵng'
-    const issueMatch = text.match(/Faulty description\s*:\s*(.+?)(?:\nCS handle:|"|\n\n|$)/is)
+
+    const issueMatch = text.match(/Faulty description\s*:\s*(.+?)(?:\s*-\s*CS\s*handle:|\nCS handle:|Note:|"|\n\n|\n\*\s*Họ tên|$)/is)
     const issue = issueMatch ? issueMatch[1].trim().replace(/\n/g, ' ') : 'Bảo hành TV'
 
     const newCa = {
@@ -85,7 +191,8 @@ const customHandleParse = async (text) => {
     if (error) showToast('Lỗi lưu ca NV: ' + error.message, 'error')
     else { showToast(`✅ Đã lưu: ${fullTicketId} - ${name}`, 'success'); await loadData() }
     rawInput.value = ''
-  } finally { isParsing.value = false }
+  }
+  try { await _run() } finally { isParsing.value = false }
 }
 
 // ── ROUTING ───────────────────────────────────────────────────
@@ -104,6 +211,20 @@ const isEditingLink   = ref({})
 const tempFolderLink  = ref({})
 const showTab         = ref('danglam')
 const outsideTab      = ref('danglam')
+
+// ── CONFIRM KHO (PSC) ─────────────────────────────────────────
+const showWarehouseConfirm = ref(false)
+const pendingCaPSC         = ref(null)
+const confirmWarehouse = async (wh) => {
+  if (!pendingCaPSC.value) return
+  pendingCaPSC.value.warehouse = wh
+  const { error } = await supabase.from('customers').insert([pendingCaPSC.value])
+  if (error) showToast('Lỗi lưu ca: ' + error.message, 'error')
+  else { showToast(`✅ Đã lưu ${wh}: ${pendingCaPSC.value.ticketId} - ${pendingCaPSC.value.name}`, 'success'); await loadData() }
+  showWarehouseConfirm.value = false
+  pendingCaPSC.value = null
+  rawInput.value = ''
+}
 
 // ── MODALS ────────────────────────────────────────────────────
 const showDetailModal       = ref(false)
@@ -264,12 +385,12 @@ const revertToDangLam = async (item) => {
   if (showDetailModal.value) closeDetailModal()
   showToast('Đã hoàn lại trạng thái đang làm!', 'warning')
 }
-const changeStatus = async (item, status) => {
+const changeStatus = async (status) => {
   if (!selectedCustomer.value) return
   const now = new Date()
   const dateStr = `${now.getDate().toString().padStart(2,'0')}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getFullYear()}`
   const updates = status === 2 ? { status, doneDate: dateStr } : { status, doneDate: null }
-  await supabase.from('customers').update(updates).eq('id', item.id)
+  await supabase.from('customers').update(updates).eq('id', selectedCustomer.value.id)
   selectedCustomer.value = { ...selectedCustomer.value, ...updates }
   await loadData(); showToast('Đã cập nhật trạng thái!', 'success')
 }
@@ -860,9 +981,9 @@ onMounted(async () => {
                   <div class="mt-3 mb-3">
                     <label class="form-label fw-bold">Chuyển trạng thái:</label>
                     <div class="d-flex gap-2 flex-wrap">
-                      <button @click="changeStatus(selectedCustomer, 0)" :class="['btn fw-bold flex-grow-1', selectedCustomer.status===0?'btn-primary':'btn-outline-primary']">⚡ Đang làm</button>
-                      <button @click="changeStatus(selectedCustomer, 1)" :class="['btn fw-bold flex-grow-1', selectedCustomer.status===1?'btn-warning':'btn-outline-warning']">⏳ Chờ LK</button>
-                      <button @click="changeStatus(selectedCustomer, 2)" :class="['btn fw-bold flex-grow-1', selectedCustomer.status===2?'btn-success':'btn-outline-success']">✅ Xong</button>
+                      <button @click="changeStatus(0)" :class="['btn fw-bold flex-grow-1', selectedCustomer.status===0?'btn-primary':'btn-outline-primary']">⚡ Đang làm</button>
+                      <button @click="changeStatus(1)" :class="['btn fw-bold flex-grow-1', selectedCustomer.status===1?'btn-warning':'btn-outline-warning']">⏳ Chờ LK</button>
+                      <button @click="changeStatus(2)" :class="['btn fw-bold flex-grow-1', selectedCustomer.status===2?'btn-success':'btn-outline-success']">✅ Xong</button>
                     </div>
                   </div>
                   <div class="mt-3">
@@ -1157,6 +1278,7 @@ onMounted(async () => {
       </div>
 
     </div>
+
   </div>
 </template>
 
