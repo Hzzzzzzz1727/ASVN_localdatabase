@@ -40,6 +40,23 @@ const showToast = (message, type = 'success', duration = 3000) => {
 // ── LOADING ───────────────────────────────────────────────────
 const isParsing = ref(false)
 
+// ── MEDIA CACHE ───────────────────────────────────────────────
+// Tránh fetch lại media mỗi lần mở modal
+const mediaCache = new Map()
+const loadMediaCached = async (id) => {
+  if (mediaCache.has(id)) return [...mediaCache.get(id)]
+  const media = await loadMediaForItem(id)
+  mediaCache.set(id, media)
+  return [...media]
+}
+const invalidateMediaCache = (id) => mediaCache.delete(id)
+
+// Helper: update local customers array (tránh reload toàn bộ)
+const updateLocalCustomer = (id, updates) => {
+  const idx = customers.value.findIndex(c => c.id === id)
+  if (idx !== -1) customers.value[idx] = { ...customers.value[idx], ...updates }
+}
+
 // ── TICKET PARSER ─────────────────────────────────────────────
 const { rawInput, handleParse } = useTicketParser(loadData)
 
@@ -80,7 +97,7 @@ const customHandleParse = async (text) => {
       return
     }
 
-    // ── Nhánh PSC: format "Số phiếu: ASVN" (không có VN-NV/NV-MSC) ──
+    // ── Nhánh PSC: format "Số phiếu: ASVN" ──────────────────────
     if (/Số phiếu\s*:/i.test(text) || /\*\s*Họ tên\s*:/i.test(text)) {
       const ticketPSC = text.match(/(?:Số phiếu|số sửa chữa)\s*:\s*(ASVN\d+)/i)?.[1]?.toUpperCase()
         || text.match(/ASVN\d+/)?.[0]?.toUpperCase()
@@ -88,29 +105,21 @@ const customHandleParse = async (text) => {
       const { data: existPSC } = await supabase.from('customers').select('ticketId').eq('ticketId', ticketPSC).maybeSingle()
       if (existPSC) { showToast(`Ca ${ticketPSC} đã tồn tại!`, 'warning'); rawInput.value = ''; return }
 
-      // Tên: "* Họ tên:" → "Name: xxx Phone" (inline, không lấy cả đoạn Report person)
       const namePSC = text.match(/\*\s*Họ tên\s*:\s*(.+?)$/im)?.[1]?.trim()
         || text.match(/\bName\s*:\s*(.+?)(?=\s+Phone\s*Number|\s+Address|\n|$)/i)?.[1]?.trim() || 'Khách'
-      // SĐT
       const rawPhPSC = text.match(/\*\s*Điện thoại\s*:\s*([\+\d]+)/i)?.[1]
         || text.match(/Phone\s*Number\s*:\s*([\+\d]+)/i)?.[1] || ''
       const phonePSC = rawPhPSC.replace(/^\+84/, '0')
-      // Địa chỉ: lấy phần ĐẦU TIÊN trước dấu ". " (bỏ địa chỉ phụ đứng sau)
       const addrRawPSC = text.match(/\*\s*Địa chỉ\s*:\s*(.+?)(?=\n\s*\*|\n\s*Tên Đại|$)/is)?.[1]
         || text.match(/\bAddress\s*:\s*(.+?)(?=\s*Faulty description|\s*CS handle|$)/is)?.[1] || ''
       const addressPSC = addrRawPSC.replace(/\n/g,' ').replace(/\s+/g,' ').trim().split(/\.\s+/)[0].trim()
-      // Model: dòng riêng "Model:\nL55M6" ưu tiên hơn inline "Model: Mi TV P1 55""
       const modelPSC = text.match(/^Model\s*:\s*\n\s*(.+?)$/im)?.[1]?.trim()
         || text.match(/^Model\s*:\s*(.+?)$/im)?.[1]?.trim() || 'Xiaomi TV'
-      // Serial: dòng riêng → dính liền 'Số Serial:xxx' → inline SN:
       const serialPSC = text.match(/Số Serial\s*:\s*\n\s*([^\n\s]+)/i)?.[1]
         || text.match(/Số Serial\s*:([^\n\s]+)/i)?.[1]
         || text.match(/(?:SN\s*or\s*IMEI|IMEI\s*\/\s*SN|SN)\s*:\s*([^\s\n]+)/i)?.[1] || ''
-      // Issue: Faulty description → dừng tại CS handle
       const issuePSC = text.match(/Faulty description\s*:\s*(.+?)(?:\s*CS handle:|\n\n|\nSố phiếu|$)/is)?.[1]?.trim().replace(/\n/g,' ')
         || text.match(/Hiện tượng\s*:\s*(.+?)(?:\n|$)/i)?.[1]?.trim() || 'Bảo hành TV'
-
-      // Kho: nếu text có "Số phiếu:" (portal NV) → NV, còn lại dùng tab đang đứng
       const warehousePSC = /Số phiếu\s*:/i.test(text) ? 'NV' : currentWarehouse.value
 
       const newCaPSC = {
@@ -139,37 +148,31 @@ const customHandleParse = async (text) => {
     const { data: exist } = await supabase.from('customers').select('ticketId').eq('ticketId', fullTicketId).maybeSingle()
     if (exist) { showToast(`Ca ${fullTicketId} đã tồn tại!`, 'warning'); rawInput.value = ''; return }
 
-    // Tên: ưu tiên "* Họ tên:" → "Customer Name:" → prefix title
-    // ── TÊN: * Họ tên → Customer Name → Report person (lấy Anh/Chị...) → prefix title
     const nameHoTen  = text.match(/\*\s*Họ tên\s*:\s*(.+?)$/im)
     const nameCust   = text.match(/Customer Name\s*:\s*(.+?)(?:\s+Customer|\n|$)/i)
     const nameReport = text.match(/Report\s*[Pp]erson\s*:.*?((?:Anh|Chị|chị|Bác|bác|Ông|ông|Bà|bà|Chú|chú|Em|em|Cô|cô)\s+[^\s\-,\n(]+)/i)
     const nameShort  = text.replace(fullTicketId, '').trim().match(/^((?:Anh|Chị|chị|Bác|bác|Ông|ông|Bà|bà|Chú|chú|Em|em|Cô|cô)\s+[^\s,|\n(]+)/)
     const name = (nameHoTen?.[1] || nameCust?.[1] || nameReport?.[1] || nameShort?.[1] || 'Khách NV').trim()
 
-    // ── SĐT: * Điện thoại → Customer Phone → Report person (số đầu) → bất kỳ số nào
-    const phoneLine  = text.match(/\*\s*Điện thoại\s*:\s*([\+\d]+)/i)
-    const phoneCust  = text.match(/Customer Phone\s*:\s*([\+\d]+)/i)
+    const phoneLine   = text.match(/\*\s*Điện thoại\s*:\s*([\+\d]+)/i)
+    const phoneCust   = text.match(/Customer Phone\s*:\s*([\+\d]+)/i)
     const phoneReport = text.match(/Report\s*[Pp]erson\s*:\s*([\+\d]+)/i)
-    const phoneAny   = text.match(/(?<!\d)(?:\+84|0)[3-9][0-9]{8}(?!\d)/)
-    const rawPhone   = phoneLine?.[1] || phoneCust?.[1] || phoneReport?.[1] || phoneAny?.[0] || ''
+    const phoneAny    = text.match(/(?<!\d)(?:\+84|0)[3-9][0-9]{8}(?!\d)/)
+    const rawPhone    = phoneLine?.[1] || phoneCust?.[1] || phoneReport?.[1] || phoneAny?.[0] || ''
     const phone = rawPhone.replace(/^\+84/, '0')
 
-    // ── ĐỊA CHỈ: * Địa chỉ → Adress/Address + cũ → Customer Address → tỉnh/thành
-    const addrFull   = text.match(/\*\s*Địa chỉ\s*:\s*(.+?)(?=\n\s*\*|\n\s*Điện thoại|\n\s*Tên|\n\s*Mail|$)/is)
-    const addrCu     = text.match(/[Aa]d+ress\s*:.*?(?:\+\s*c[uũ]\s*:)?\s*(.+?)(?:\s*-\s*Faulty|\s*-\s*CS\s*handle|$)/is)
-    const addrCust   = text.match(/Customer [Aa]d+ress\s*:\s*(.+?)(?:\n|$)/i)
-    const addrCity   = text.match(/([^\n]+?(?:Quảng Nam|Đà Nẵng|QUẢNG NAM|ĐÀ NẴNG|tỉnh|Huyện)[^\n]*)/i)
-    const rawAddr    = addrFull?.[1] || addrCu?.[1] || addrCust?.[1] || addrCity?.[1] || 'Chưa bóc được địa chỉ'
-    const address    = rawAddr.replace(/^\+?\s*c[uũ]\s*:\s*/i, '').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
+    const addrFull  = text.match(/\*\s*Địa chỉ\s*:\s*(.+?)(?=\n\s*\*|\n\s*Điện thoại|\n\s*Tên|\n\s*Mail|$)/is)
+    const addrCu    = text.match(/[Aa]d+ress\s*:.*?(?:\+\s*c[uũ]\s*:)?\s*(.+?)(?:\s*-\s*Faulty|\s*-\s*CS\s*handle|$)/is)
+    const addrCust  = text.match(/Customer [Aa]d+ress\s*:\s*(.+?)(?:\n|$)/i)
+    const addrCity  = text.match(/([^\n]+?(?:Quảng Nam|Đà Nẵng|QUẢNG NAM|ĐÀ NẴNG|tỉnh|Huyện)[^\n]*)/i)
+    const rawAddr   = addrFull?.[1] || addrCu?.[1] || addrCust?.[1] || addrCity?.[1] || 'Chưa bóc được địa chỉ'
+    const address   = rawAddr.replace(/^\+?\s*c[uũ]\s*:\s*/i, '').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
 
-    // ── MODEL: "- Model: X" inline → dòng riêng "Model:\nX" → fallback
     const modelInline = text.match(/-\s*Model\s*:\s*(.+?)(?:\s*-\s*SN|\s*-\s*Adress|\s*-\s*Faulty|\n|$)/i)
     const modelDesc   = text.match(/Model\s*:\s*(Xiaomi[^\n\r\-]+?)(?:\n|SN:|$)/i)
     const modelLine   = text.match(/^[Mm]odel\s*:\s*(.+?)$/im)
     const model = (modelInline?.[1] || modelDesc?.[1] || modelLine?.[1] || 'Xiaomi TV').trim()
 
-    // ── SERIAL: "SN or IMEI: X" → "IMEI/SN: X" → "SN: X" → "Số Serial:\nX"
     const serialMatch = text.match(/(?:SN\s*or\s*IMEI|IMEI\s*[\/|]\s*SN|SN\s*or\s*SN)\s*:\s*([^\s\-]+)/i)
       || text.match(/(?:IMEI\s*\/\s*SN|SN\s*:|Serial\s*:)\s*([A-Z0-9\/\-]+)/i)
       || text.match(/Số Serial\s*:\s*\n?\s*([^\n\s]+)/i)
@@ -204,40 +207,26 @@ const linhKien = useLinhKienManager(loadData)
 const { searchTicketId, newReplacedPart, editingPart, showPartModal, linhKienList, showCustomInput, customPartInput, confirmCustomPart, openPartModal, closePartModal, selectPart, loadPartForEdit, saveLinhKien, deleteLinhKien } = linhKien
 
 // ── STATE ─────────────────────────────────────────────────────
-const currentType     = ref('ASVN')
-const showWarehouse   = ref(true)
+const currentType      = ref('ASVN')
+const showWarehouse    = ref(true)
 const currentWarehouse = ref('TDP')
-const isEditingLink   = ref({})
-const tempFolderLink  = ref({})
-const showTab         = ref('danglam')
-const outsideTab      = ref('danglam')
-
-// ── CONFIRM KHO (PSC) ─────────────────────────────────────────
-const showWarehouseConfirm = ref(false)
-const pendingCaPSC         = ref(null)
-const confirmWarehouse = async (wh) => {
-  if (!pendingCaPSC.value) return
-  pendingCaPSC.value.warehouse = wh
-  const { error } = await supabase.from('customers').insert([pendingCaPSC.value])
-  if (error) showToast('Lỗi lưu ca: ' + error.message, 'error')
-  else { showToast(`✅ Đã lưu ${wh}: ${pendingCaPSC.value.ticketId} - ${pendingCaPSC.value.name}`, 'success'); await loadData() }
-  showWarehouseConfirm.value = false
-  pendingCaPSC.value = null
-  rawInput.value = ''
-}
+const isEditingLink    = ref({})
+const tempFolderLink   = ref({})
+const showTab          = ref('danglam')
+const outsideTab       = ref('danglam')
 
 // ── MODALS ────────────────────────────────────────────────────
-const showDetailModal       = ref(false)
-const selectedCustomer      = ref(null)
-const editingPart2          = ref('')
-const showModal             = ref(false)
-const modalMedia            = ref(null)
-const showTreModal          = ref(false)
-const showOutsideForm       = ref(false)
-const outsideForm           = ref({ name: '', phone: '', brand: '', model: '', issue: '' })
+const showDetailModal        = ref(false)
+const selectedCustomer       = ref(null)
+const editingPart2           = ref('')
+const showModal              = ref(false)
+const modalMedia             = ref(null)
+const showTreModal           = ref(false)
+const showOutsideForm        = ref(false)
+const outsideForm            = ref({ name: '', phone: '', brand: '', model: '', issue: '' })
 const showOutsideDetailModal = ref(false)
-const selectedOutside       = ref(null)
-const editingOutsidePart    = ref('')
+const selectedOutside        = ref(null)
+const editingOutsidePart     = ref('')
 
 // ── MODAL HANDLERS ────────────────────────────────────────────
 const openDetailModalFull = async (customer) => {
@@ -245,7 +234,8 @@ const openDetailModalFull = async (customer) => {
   editingPart2.value = customer.replacedPart || ''
   showDetailModal.value = true
   document.body.style.overflow = 'hidden'
-  const media = await loadMediaForItem(customer.id)
+  // Load media từ cache (nhanh nếu đã mở trước đó)
+  const media = await loadMediaCached(customer.id)
   if (selectedCustomer.value) selectedCustomer.value = { ...selectedCustomer.value, media }
 }
 const closeDetailModal = () => {
@@ -257,22 +247,21 @@ const openOutsideDetailModal = async (item) => {
   editingOutsidePart.value = item.replacedPart || ''
   showOutsideDetailModal.value = true
   document.body.style.overflow = 'hidden'
-  const media = await loadMediaForItem(item.id)
+  const media = await loadMediaCached(item.id)
   if (selectedOutside.value) selectedOutside.value = { ...selectedOutside.value, media }
 }
 const closeOutsideDetailModal = () => {
   showOutsideDetailModal.value = false; selectedOutside.value = null; document.body.style.overflow = ''
 }
 
-const openTreModal   = () => showTreModal.value = true
-const closeTreModal  = () => showTreModal.value = false
-const openMediaModal = (media) => { modalMedia.value = media; showModal.value = true; document.body.style.overflow = 'hidden' }
+const openTreModal    = () => showTreModal.value = true
+const closeTreModal   = () => showTreModal.value = false
+const openMediaModal  = (media) => { modalMedia.value = media; showModal.value = true; document.body.style.overflow = 'hidden' }
 const closeMediaModal = () => { showModal.value = false; modalMedia.value = null; document.body.style.overflow = '' }
 
 // ── NAVIGATION ────────────────────────────────────────────────
 const backToTypeToggle = () => { showWarehouse.value = false; currentType.value = 'ASVN' }
 const selectWarehouse  = (wh) => {
-  // Nhân viên có kho cố định không được đổi
   if (isNhanVien.value && userWarehouse.value && wh !== userWarehouse.value) return
   currentWarehouse.value = wh; searchQuery.value = ''
 }
@@ -289,30 +278,31 @@ const stats = computed(() => {
   const nv   = asvn.filter(c => c.warehouse === 'NV')
   const today = new Date().toLocaleDateString('vi-VN', { day:'2-digit', month:'2-digit', year:'numeric' })
   return {
-    tongTat:   asvn.filter(c => c.status === 2).length,
-    dangLamAll: asvn.filter(c => c.status === 0).length,
-    choLKAll:  asvn.filter(c => c.status === 1).length,
-    tdpDangLam: tdp.filter(c => c.status === 0).length,
-    tdpChoLK:  tdp.filter(c => c.status === 1).length,
-    tdpXong:   tdp.filter(c => c.status === 2).length,
-    nvDangLam: nv.filter(c => c.status === 0).length,
-    nvChoLK:   nv.filter(c => c.status === 1).length,
-    nvXong:    nv.filter(c => c.status === 2).length,
+    tongTat:        asvn.filter(c => c.status === 2).length,
+    dangLamAll:     asvn.filter(c => c.status === 0).length,
+    choLKAll:       asvn.filter(c => c.status === 1).length,
+    tdpDangLam:     tdp.filter(c => c.status === 0).length,
+    tdpChoLK:       tdp.filter(c => c.status === 1).length,
+    tdpXong:        tdp.filter(c => c.status === 2).length,
+    nvDangLam:      nv.filter(c => c.status === 0).length,
+    nvChoLK:        nv.filter(c => c.status === 1).length,
+    nvXong:         nv.filter(c => c.status === 2).length,
     hoanThanhHomNay: asvn.filter(c => c.status === 2 && c.doneDate === today).length,
-    csvnTong:  customers.value.filter(c => c.ticketId?.startsWith('CSVN')).length,
-    ngoaiTong: customers.value.filter(c => c.ticketId?.startsWith('NGOAI')).length,
+    csvnTong:       customers.value.filter(c => c.ticketId?.startsWith('CSVN')).length,
+    ngoaiTong:      customers.value.filter(c => c.ticketId?.startsWith('NGOAI')).length,
   }
 })
 
 // ── COMPUTED ──────────────────────────────────────────────────
 const filteredCustomers = computed(() => {
   let f = customers.value
-  if (currentType.value === 'ASVN')    f = f.filter(c => c.ticketId?.startsWith('ASVN'))
-  else if (currentType.value === 'CSVN')   f = f.filter(c => c.ticketId?.startsWith('CSVN'))
+  if (currentType.value === 'ASVN')         f = f.filter(c => c.ticketId?.startsWith('ASVN'))
+  else if (currentType.value === 'CSVN')    f = f.filter(c => c.ticketId?.startsWith('CSVN'))
   else if (currentType.value === 'OUTSIDE') f = f.filter(c => c.ticketId?.startsWith('NGOAI'))
   if (currentType.value === 'ASVN' && showWarehouse.value && !searchQuery.value)
     f = f.filter(c => c.warehouse === currentWarehouse.value)
   const q = searchQuery.value.toLowerCase()
+  if (!q) return f
   return f.filter(c =>
     c.name?.toLowerCase().includes(q) || c.phone?.includes(q) ||
     c.ticketId?.toLowerCase().includes(q) || c.model?.toLowerCase().includes(q) ||
@@ -334,15 +324,15 @@ const hoanThanh   = computed(() => {
   items.forEach(item => { const d = item.doneDate || 'N/A'; if (!groups[d]) groups[d] = []; groups[d].push(item) })
   return groups
 })
-const outsideDangLam    = computed(() => filteredCustomers.value.filter(c => c.status === 0))
+const outsideDangLam     = computed(() => filteredCustomers.value.filter(c => c.status === 0))
 const outsideChoLinhKien = computed(() => filteredCustomers.value.filter(c => c.status === 1))
-const outsideHoanThanh  = computed(() => filteredCustomers.value.filter(c => c.status === 2))
+const outsideHoanThanh   = computed(() => filteredCustomers.value.filter(c => c.status === 2))
 const treCaList = computed(() => {
   const now = Date.now()
   return filteredCustomers.value.filter(c => c.status === 0 && c.createdAt && now - new Date(c.createdAt).getTime() > 86400000)
 })
 
-const getWarehouseLabel = (item) => item.warehouse === 'TDP' ? 'Kho TDP' : item.warehouse === 'NV' ? 'Kho NV' : ''
+const getWarehouseLabel     = (item) => item.warehouse === 'TDP' ? 'Kho TDP' : item.warehouse === 'NV' ? 'Kho NV' : ''
 const getWarehouseBadgeClass = (wh) => wh === 'TDP' ? 'bg-primary' : 'bg-success'
 
 // ── CA NGOÀI ──────────────────────────────────────────────────
@@ -370,18 +360,20 @@ const saveOutsideCa = async () => {
 const hoanTatKiemTra = async (item, event) => {
   if (!confirm(`Chuyển ca ${item.ticketId} sang "Chờ linh kiện"?`)) { event.target.checked = false; return }
   await supabase.from('customers').update({ status: 1 }).eq('id', item.id)
-  await loadData(); showToast('Đã chuyển sang chờ linh kiện!', 'success')
+  updateLocalCustomer(item.id, { status: 1 })
+  showToast('Đã chuyển sang chờ linh kiện!', 'success')
 }
 const dongCa = async (item) => {
   if (!confirm(`Chốt hoàn thành ca ${item.ticketId}?`)) return
   const now = new Date()
   const dateStr = `${now.getDate().toString().padStart(2,'0')}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getFullYear()}`
   await supabase.from('customers').update({ status: 2, doneDate: dateStr }).eq('id', item.id)
-  await loadData(); showToast('Đã chốt ca hoàn thành!', 'success')
+  updateLocalCustomer(item.id, { status: 2, doneDate: dateStr })
+  showToast('Đã chốt ca hoàn thành!', 'success')
 }
 const revertToDangLam = async (item) => {
   await supabase.from('customers').update({ status: 0, doneDate: null }).eq('id', item.id)
-  await loadData()
+  updateLocalCustomer(item.id, { status: 0, doneDate: null })
   if (showDetailModal.value) closeDetailModal()
   showToast('Đã hoàn lại trạng thái đang làm!', 'warning')
 }
@@ -392,7 +384,8 @@ const changeStatus = async (status) => {
   const updates = status === 2 ? { status, doneDate: dateStr } : { status, doneDate: null }
   await supabase.from('customers').update(updates).eq('id', selectedCustomer.value.id)
   selectedCustomer.value = { ...selectedCustomer.value, ...updates }
-  await loadData(); showToast('Đã cập nhật trạng thái!', 'success')
+  updateLocalCustomer(selectedCustomer.value.id, updates)
+  showToast('Đã cập nhật trạng thái!', 'success')
 }
 const changeOutsideStatus = async (status) => {
   if (!selectedOutside.value) return
@@ -401,19 +394,22 @@ const changeOutsideStatus = async (status) => {
   const updates = status === 2 ? { status, doneDate: dateStr } : { status, doneDate: null }
   await supabase.from('customers').update(updates).eq('id', selectedOutside.value.id)
   selectedOutside.value = { ...selectedOutside.value, ...updates }
-  await loadData(); showToast('Đã cập nhật trạng thái!', 'success')
+  updateLocalCustomer(selectedOutside.value.id, updates)
+  showToast('Đã cập nhật trạng thái!', 'success')
 }
 const savePartInModal = async () => {
   if (!selectedCustomer.value) return
   await supabase.from('customers').update({ replacedPart: editingPart2.value }).eq('id', selectedCustomer.value.id)
   selectedCustomer.value.replacedPart = editingPart2.value
-  await loadData(); showToast('Đã lưu linh kiện!', 'success')
+  updateLocalCustomer(selectedCustomer.value.id, { replacedPart: editingPart2.value })
+  showToast('Đã lưu linh kiện!', 'success')
 }
 const saveOutsidePart = async () => {
   if (!selectedOutside.value) return
   await supabase.from('customers').update({ replacedPart: editingOutsidePart.value }).eq('id', selectedOutside.value.id)
   selectedOutside.value.replacedPart = editingOutsidePart.value
-  await loadData(); showToast('Đã lưu linh kiện!', 'success')
+  updateLocalCustomer(selectedOutside.value.id, { replacedPart: editingOutsidePart.value })
+  showToast('Đã lưu linh kiện!', 'success')
 }
 
 // ── XÓA CA (chỉ admin) ───────────────────────────────────────
@@ -427,7 +423,12 @@ const deleteCustomer = async (id) => {
   if (!confirm(msg)) return
   const { error } = await supabase.from('customers').delete().eq('id', id)
   if (error) showToast('Lỗi xóa: ' + error.message, 'error')
-  else { showToast('Đã xóa ca thành công!', 'success'); await loadData() }
+  else {
+    showToast('Đã xóa ca thành công!', 'success')
+    // Xóa local ngay, không cần reload toàn bộ
+    customers.value = customers.value.filter(c => c.id !== id)
+    invalidateMediaCache(id)
+  }
   if (showDetailModal.value) closeDetailModal()
   if (showOutsideDetailModal.value) closeOutsideDetailModal()
 }
@@ -447,29 +448,36 @@ const updateLocalMedia = (itemId, media) => {
 }
 const onFileChange = async (e, item) => {
   const files = Array.from(e.target.files)
-  const currentMedia = await loadMediaForItem(item.id)
-  for (const file of files) {
+  if (!files.length) return
+  // Đọc tất cả file song song (Promise.all nhanh hơn tuần tự)
+  const newItems = await Promise.all(files.map(file => new Promise(resolve => {
     const reader = new FileReader()
-    const base64 = await new Promise(r => { reader.onload = () => r(reader.result); reader.readAsDataURL(file) })
-    currentMedia.push({ type: file.type.startsWith('video') ? 'video' : 'image', data: base64, source: 'local' })
-  }
+    reader.onload = () => resolve({ type: file.type.startsWith('video') ? 'video' : 'image', data: reader.result, source: 'local' })
+    reader.readAsDataURL(file)
+  })))
+  const currentMedia = await loadMediaCached(item.id)
+  currentMedia.push(...newItems)
   await supabase.from('customers').update({ media: currentMedia }).eq('id', item.id)
+  // Cập nhật cache
+  mediaCache.set(item.id, currentMedia)
   updateLocalMedia(item.id, currentMedia)
 }
 const addSingleDrive = async (item) => {
   const inputEl = document.getElementById(`single-drive-${item.id}`)
   if (!inputEl?.value.trim()) return
-  const currentMedia = await loadMediaForItem(item.id)
+  const currentMedia = await loadMediaCached(item.id)
   const link = inputEl.value.trim()
   currentMedia.push({ type: 'image', data: formatDriveLink(link), source: 'drive', original: link })
   await supabase.from('customers').update({ media: currentMedia }).eq('id', item.id)
   inputEl.value = ''
+  mediaCache.set(item.id, currentMedia)
   updateLocalMedia(item.id, currentMedia)
 }
 const removeMedia = async (item, index) => {
-  const currentMedia = await loadMediaForItem(item.id)
+  const currentMedia = await loadMediaCached(item.id)
   currentMedia.splice(index, 1)
   await supabase.from('customers').update({ media: currentMedia }).eq('id', item.id)
+  mediaCache.set(item.id, currentMedia)
   updateLocalMedia(item.id, currentMedia)
 }
 
@@ -481,7 +489,8 @@ const saveFolderLink  = async (id) => {
   isEditingLink.value[id] = false
   if (showDetailModal.value && selectedCustomer.value?.id === id) selectedCustomer.value.folderDrive = link
   if (showOutsideDetailModal.value && selectedOutside.value?.id === id) selectedOutside.value.folderDrive = link
-  await loadData(); showToast('Đã lưu link Drive!', 'success')
+  updateLocalCustomer(id, { folderDrive: link })
+  showToast('Đã lưu link Drive!', 'success')
 }
 
 // ── HELPERS ───────────────────────────────────────────────────
@@ -516,39 +525,40 @@ onMounted(async () => {
   await initAuth()
   if (isLoggedIn.value) {
     await loadData()
-    // Set kho mặc định theo quyền user
-    if (isNhanVien.value && userWarehouse.value) {
-      currentWarehouse.value = userWarehouse.value
-    } else {
-      currentWarehouse.value = 'TDP'
-    }
+    currentWarehouse.value = (isNhanVien.value && userWarehouse.value) ? userWarehouse.value : 'TDP'
   }
-  // Watch: reset kho khi user thay đổi (login/logout)
   watch(isLoggedIn, async (val) => {
     if (val) {
       await loadData()
-      if (isNhanVien.value && userWarehouse.value) {
-        currentWarehouse.value = userWarehouse.value
-      } else {
-        currentWarehouse.value = 'TDP'
-      }
+      currentWarehouse.value = (isNhanVien.value && userWarehouse.value) ? userWarehouse.value : 'TDP'
     }
   })
 
-  // Realtime: tự động cập nhật khi có thay đổi từ thiết bị khác
-  const realtimeChannel = supabase
+  // Realtime: debounce 1.5s tránh reload liên tục khi nhiều change cùng lúc
+  let realtimeDebounce = null
+  supabase
     .channel('customers-realtime')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => {
-      loadData()
+      clearTimeout(realtimeDebounce)
+      realtimeDebounce = setTimeout(() => {
+        mediaCache.clear() // clear cache khi có thay đổi từ device khác
+        loadData()
+      }, 1500)
     })
     .subscribe()
 
   const channel = new BroadcastChannel('zalo_bridge')
   channel.onmessage = (event) => { if (event.data) customHandleParse(event.data) }
+
+  // Clipboard: chỉ parse nếu text mới (tránh parse lại text cũ mỗi lần focus)
+  let lastClipboardText = ''
   window.addEventListener('focus', async () => {
     try {
       const text = await navigator.clipboard.readText()
-      if (text && (text.includes('ASVN') || text.includes('CSVN'))) customHandleParse(text)
+      if (text && text !== lastClipboardText && (text.includes('ASVN') || text.includes('CSVN'))) {
+        lastClipboardText = text
+        customHandleParse(text)
+      }
     } catch {}
   })
 })
@@ -587,14 +597,14 @@ onMounted(async () => {
         <button v-if="isAdmin"
           @click="showStats = !showStats"
           :class="['btn-topbar', showStats ? 'btn-topbar--active' : '']">
-          📊 Thống kê
+          📊 <span class="btn-text">Thống kê</span>
         </button>
         <button v-if="isAdmin"
           @click="showAdminPanel = !showAdminPanel"
           :class="['btn-topbar', showAdminPanel ? 'btn-topbar--active' : '']">
-          👥 Quản lý TK
+          👥 <span class="btn-text">Quản lý TK</span>
         </button>
-        <button @click="logout" class="btn-topbar btn-topbar--logout">🚪 Thoát</button>
+        <button @click="logout" class="btn-topbar btn-topbar--logout">🚪 <span class="btn-text">Thoát</span></button>
       </div>
     </div>
 
@@ -743,7 +753,6 @@ onMounted(async () => {
             <div class="d-flex gap-2 flex-wrap">
               <input type="text" v-model="historySearchQuery" class="form-control flex-grow-1 mb-2"
                 placeholder="🔍 Tìm trong lịch sử...">
-              <!-- Xuất Excel: chỉ admin -->
               <template v-if="isAdmin">
                 <div v-if="showWarehouse" class="d-flex gap-1 w-100">
                   <button @click="exportHoanThanhByWarehouse('TDP')" class="btn btn-outline-primary fw-bold flex-grow-1">📊 TDP</button>
@@ -872,7 +881,6 @@ onMounted(async () => {
 
         <!-- ── CA NGOÀI ── -->
         <div v-else-if="currentType === 'OUTSIDE'">
-          <!-- Đang làm -->
           <div v-if="outsideTab === 'danglam'">
             <div v-if="outsideDangLam.length">
               <h5 class="mb-3">Đang làm ({{ outsideDangLam.length }})</h5>
@@ -897,7 +905,6 @@ onMounted(async () => {
             </div>
             <div v-else class="text-center text-muted py-5">Chưa có ca ngoài đang làm</div>
           </div>
-          <!-- Chờ LK -->
           <div v-if="outsideTab === 'cholinkien'">
             <div v-if="outsideChoLinhKien.length">
               <h5 class="mb-3">Chờ linh kiện ({{ outsideChoLinhKien.length }})</h5>
@@ -922,7 +929,6 @@ onMounted(async () => {
             </div>
             <div v-else class="text-center text-muted py-5">Chưa có ca ngoài chờ linh kiện</div>
           </div>
-          <!-- Hoàn thành -->
           <div v-if="outsideTab === 'hoanthanh'">
             <div v-if="outsideHoanThanh.length">
               <h5 class="mb-3">Hoàn thành ({{ outsideHoanThanh.length }})</h5>
@@ -1011,7 +1017,7 @@ onMounted(async () => {
                   <div v-if="!selectedCustomer.media?.length" class="text-muted small mb-3">⏳ Đang tải ảnh...</div>
                   <div class="media-grid">
                     <div v-for="(m, idx) in selectedCustomer.media || []" :key="idx" class="media-item position-relative">
-                      <img v-if="m.type==='image'" :src="m.data" @click="openMediaModal(m)" alt="Ảnh" style="cursor:pointer;">
+                      <img v-if="m.type==='image'" :src="m.data" @click="openMediaModal(m)" alt="Ảnh" style="cursor:pointer;" loading="lazy">
                       <video v-else :src="m.data" controls preload="metadata"></video>
                       <span @click.stop="removeMedia(selectedCustomer, idx)" class="media-del">×</span>
                     </div>
@@ -1019,10 +1025,6 @@ onMounted(async () => {
                       <span>+</span>
                       <input type="file" hidden multiple accept="image/*,video/*" @change="onFileChange($event, selectedCustomer)">
                     </label>
-                  </div>
-                  <div class="input-group input-group-sm mt-2">
-                    <input :id="'single-drive-'+selectedCustomer.id" class="form-control" placeholder="Link ảnh lẻ..." @keyup.enter="addSingleDrive(selectedCustomer)">
-                    <button @click="addSingleDrive(selectedCustomer)" class="btn btn-outline-primary">Thêm</button>
                   </div>
                 </div>
               </div>
@@ -1092,7 +1094,7 @@ onMounted(async () => {
                   <div v-if="!selectedOutside.media?.length" class="text-muted small mb-3">⏳ Đang tải ảnh...</div>
                   <div class="media-grid">
                     <div v-for="(m, idx) in selectedOutside.media || []" :key="idx" class="media-item position-relative">
-                      <img v-if="m.type==='image'" :src="m.data" @click="openMediaModal(m)" alt="Ảnh" style="cursor:pointer;">
+                      <img v-if="m.type==='image'" :src="m.data" @click="openMediaModal(m)" alt="Ảnh" style="cursor:pointer;" loading="lazy">
                       <video v-else :src="m.data" controls preload="metadata"></video>
                       <span @click.stop="removeMedia(selectedOutside, idx)" class="media-del">×</span>
                     </div>
@@ -1100,10 +1102,6 @@ onMounted(async () => {
                       <span>+</span>
                       <input type="file" hidden multiple accept="image/*,video/*" @change="onFileChange($event, selectedOutside)">
                     </label>
-                  </div>
-                  <div class="input-group input-group-sm mt-2">
-                    <input :id="'single-drive-'+selectedOutside.id" class="form-control" placeholder="Link ảnh lẻ...">
-                    <button @click="addSingleDrive(selectedOutside)" class="btn btn-outline-primary">Thêm</button>
                   </div>
                 </div>
               </div>
@@ -1385,9 +1383,17 @@ onMounted(async () => {
 
 /* ── Responsive ───────────────────────────────────────────── */
 @media (max-width: 480px) {
+  .topbar { padding: 0 0.6rem; height: 50px; flex-wrap: nowrap; }
+  .topbar-left { gap: 0.35rem; flex-shrink: 0; min-width: 0; }
+  .topbar-logo { font-size: 1.1rem; }
+  .topbar-appname { font-size: 0.8rem; }
+  .role-chip { font-size: 0.62rem; padding: 0.12rem 0.4rem; }
+  .topbar-user { display: none; }
+  .topbar-right { gap: 0.3rem; flex-shrink: 0; }
+  .btn-topbar { padding: 0.3rem 0.45rem; font-size: 1rem; border-radius: 6px; white-space: nowrap; min-width: 36px; }
+  .btn-text { display: none; }
   .tab-label { display: none; }
   .status-toggle-row button { font-size: 0.85rem; padding: 0.6rem 0.4rem; }
-  .topbar-user { display: none; }
   .modal-dialog { margin: 0.5rem; max-width: calc(100% - 1rem); }
 }
 @media (max-width: 768px) {
