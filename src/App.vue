@@ -21,12 +21,15 @@ const {
 
 const showAdminPanel = ref(false)
 const showStats = ref(false)
+const isOnline = ref(navigator.onLine)
+window.addEventListener('online',  () => { isOnline.value = true;  showToast('Đã kết nối lại!', 'success') })
+window.addEventListener('offline', () => { isOnline.value = false; showToast('Mất kết nối mạng!', 'error', 0) })
 
 // ── SUPABASE ──────────────────────────────────────────────────
 const supabase = getSupabase()
 const searchQuery = ref('')
 const historySearchQuery = ref('')
-const { customers, loadData, loadMediaForItem } = useSupabaseCustomers()
+const { customers, loadData, loadMediaForItem, uploadMediaFiles, removeMediaItem, migrateBase64ToStorage } = useSupabaseCustomers()
 
 // ── TOAST ─────────────────────────────────────────────────────
 const toasts = ref([])
@@ -45,9 +48,18 @@ const isParsing = ref(false)
 const mediaCache = new Map()
 const loadMediaCached = async (id) => {
   if (mediaCache.has(id)) return [...mediaCache.get(id)]
-  const media = await loadMediaForItem(id)
-  mediaCache.set(id, media)
-  return [...media]
+  try {
+    // Timeout 8s - nếu Supabase không response thì trả về [] thay vì treo
+    const media = await Promise.race([
+      loadMediaForItem(id),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
+    ])
+    mediaCache.set(id, media)
+    return [...media]
+  } catch (e) {
+    if (e.message === 'timeout') showToast('Load ảnh chậm, thử lại sau', 'warning', 2000)
+    return []
+  }
 }
 const invalidateMediaCache = (id) => mediaCache.delete(id)
 
@@ -215,6 +227,44 @@ const tempFolderLink   = ref({})
 const showTab          = ref('danglam')
 const outsideTab       = ref('danglam')
 
+// ── EDIT CA ───────────────────────────────────────────────────
+const showEditModal   = ref(false)
+const editingCa       = ref(null)  // bản copy đang edit
+const editingCaSource = ref('')    // 'asvn' | 'outside'
+
+const openEditModal = (customer, source = 'asvn') => {
+  editingCa.value = {
+    id: customer.id,
+    name: customer.name || '',
+    phone: customer.phone || '',
+    model: customer.model || '',
+    address: customer.address || '',
+    issue: customer.issue || '',
+    serial: customer.serial || '',
+    branch: customer.branch || '',
+    warehouse: customer.warehouse || '',
+  }
+  editingCaSource.value = source
+  showEditModal.value = true
+}
+const closeEditModal = () => { showEditModal.value = false; editingCa.value = null }
+
+const saveEditCa = async () => {
+  if (!editingCa.value) return
+  const { id, ...fields } = editingCa.value
+  const { error } = await supabase.from('customers').update(fields).eq('id', id)
+  if (error) { showToast('Lỗi cập nhật: ' + error.message, 'error'); return }
+  // Cập nhật local
+  updateLocalCustomer(id, fields)
+  // Cập nhật modal đang mở
+  if (showDetailModal.value && selectedCustomer.value?.id === id)
+    selectedCustomer.value = { ...selectedCustomer.value, ...fields }
+  if (showOutsideDetailModal.value && selectedOutside.value?.id === id)
+    selectedOutside.value = { ...selectedOutside.value, ...fields }
+  showToast('✅ Đã cập nhật ca!', 'success')
+  closeEditModal()
+}
+
 // ── MODALS ────────────────────────────────────────────────────
 const showDetailModal        = ref(false)
 const selectedCustomer       = ref(null)
@@ -234,9 +284,16 @@ const openDetailModalFull = async (customer) => {
   editingPart2.value = customer.replacedPart || ''
   showDetailModal.value = true
   document.body.style.overflow = 'hidden'
-  // Load media từ cache (nhanh nếu đã mở trước đó)
   const media = await loadMediaCached(customer.id)
   if (selectedCustomer.value) selectedCustomer.value = { ...selectedCustomer.value, media }
+  // Migrate base64 cũ sang Storage ngầm (không block UI)
+  if (media.some(m => m.source === 'local' || (!m.source && m.data?.startsWith('data:')))) {
+    migrateBase64ToStorage(customer.id, media).then(migrated => {
+      mediaCache.set(customer.id, migrated)
+      if (selectedCustomer.value?.id === customer.id)
+        selectedCustomer.value = { ...selectedCustomer.value, media: migrated }
+    })
+  }
 }
 const closeDetailModal = () => {
   showDetailModal.value = false; selectedCustomer.value = null; document.body.style.overflow = ''
@@ -249,6 +306,13 @@ const openOutsideDetailModal = async (item) => {
   document.body.style.overflow = 'hidden'
   const media = await loadMediaCached(item.id)
   if (selectedOutside.value) selectedOutside.value = { ...selectedOutside.value, media }
+  if (media.some(m => m.source === 'local' || (!m.source && m.data?.startsWith('data:')))) {
+    migrateBase64ToStorage(item.id, media).then(migrated => {
+      mediaCache.set(item.id, migrated)
+      if (selectedOutside.value?.id === item.id)
+        selectedOutside.value = { ...selectedOutside.value, media: migrated }
+    })
+  }
 }
 const closeOutsideDetailModal = () => {
   showOutsideDetailModal.value = false; selectedOutside.value = null; document.body.style.overflow = ''
@@ -449,18 +513,12 @@ const updateLocalMedia = (itemId, media) => {
 const onFileChange = async (e, item) => {
   const files = Array.from(e.target.files)
   if (!files.length) return
-  // Đọc tất cả file song song (Promise.all nhanh hơn tuần tự)
-  const newItems = await Promise.all(files.map(file => new Promise(resolve => {
-    const reader = new FileReader()
-    reader.onload = () => resolve({ type: file.type.startsWith('video') ? 'video' : 'image', data: reader.result, source: 'local' })
-    reader.readAsDataURL(file)
-  })))
   const currentMedia = await loadMediaCached(item.id)
-  currentMedia.push(...newItems)
-  await supabase.from('customers').update({ media: currentMedia }).eq('id', item.id)
-  // Cập nhật cache
-  mediaCache.set(item.id, currentMedia)
-  updateLocalMedia(item.id, currentMedia)
+  // Upload lên Supabase Storage thay vì base64
+  const updated = await uploadMediaFiles(files, item.id, currentMedia)
+  await supabase.from('customers').update({ media: updated }).eq('id', item.id)
+  mediaCache.set(item.id, updated)
+  updateLocalMedia(item.id, updated)
 }
 const addSingleDrive = async (item) => {
   const inputEl = document.getElementById(`single-drive-${item.id}`)
@@ -475,10 +533,11 @@ const addSingleDrive = async (item) => {
 }
 const removeMedia = async (item, index) => {
   const currentMedia = await loadMediaCached(item.id)
-  currentMedia.splice(index, 1)
-  await supabase.from('customers').update({ media: currentMedia }).eq('id', item.id)
-  mediaCache.set(item.id, currentMedia)
-  updateLocalMedia(item.id, currentMedia)
+  // Xóa file khỏi Storage nếu là storage item
+  const updated = await removeMediaItem(currentMedia, index)
+  await supabase.from('customers').update({ media: updated }).eq('id', item.id)
+  mediaCache.set(item.id, updated)
+  updateLocalMedia(item.id, updated)
 }
 
 // ── DRIVE FOLDER ──────────────────────────────────────────────
@@ -534,23 +593,80 @@ onMounted(async () => {
     }
   })
 
-  // Realtime: debounce 1.5s tránh reload liên tục khi nhiều change cùng lúc
+  // ── REALTIME với auto-reconnect ────────────────────────────
   let realtimeDebounce = null
-  supabase
-    .channel('customers-realtime')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => {
-      clearTimeout(realtimeDebounce)
-      realtimeDebounce = setTimeout(() => {
-        mediaCache.clear() // clear cache khi có thay đổi từ device khác
-        loadData()
-      }, 1500)
-    })
-    .subscribe()
+  let realtimeChannel = null
+
+  const setupRealtime = () => {
+    // Hủy channel cũ nếu có
+    if (realtimeChannel) {
+      supabase.removeChannel(realtimeChannel)
+      realtimeChannel = null
+    }
+    realtimeChannel = supabase
+      .channel('customers-realtime-' + Date.now()) // tên unique để tránh conflict
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => {
+        clearTimeout(realtimeDebounce)
+        realtimeDebounce = setTimeout(() => {
+          mediaCache.clear()
+          loadData()
+        }, 1500)
+      })
+      .subscribe((status) => {
+        // Nếu bị lỗi hoặc closed → thử reconnect sau 5s
+        if (status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+          setTimeout(setupRealtime, 5000)
+        }
+      })
+  }
+  setupRealtime()
+
+  // ── Keepalive: 2 phút ping 1 lần để giữ session + connection ─
+  setInterval(async () => {
+    // Ping nhẹ để giữ auth session sống
+    try { await supabase.auth.getSession() } catch {}
+    // Kiểm tra realtime channel
+    if (!realtimeChannel) { setupRealtime(); return }
+    const state = realtimeChannel.state
+    if (state !== 'joined') setupRealtime()
+  }, 2 * 60 * 1000)
+
+  // ── Khi tab trở lại foreground → refresh session + reload ───
+  let lastActiveTime = Date.now()
+  let isRecovering = false
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible') {
+      if (isRecovering) return
+      const awayMs = Date.now() - lastActiveTime
+      // Nếu tab bị ẩn > 1 phút → refresh session + reload
+      if (awayMs > 60 * 1000) {
+        isRecovering = true
+        try {
+          // Refresh Supabase auth session trước (quan trọng nhất!)
+          const { error: sessionError } = await supabase.auth.refreshSession()
+          if (sessionError) {
+            // Session hết hạn hoàn toàn → logout và redirect login
+            await logout()
+            return
+          }
+          mediaCache.clear()
+          await loadData()
+          setupRealtime()
+        } catch (e) {
+          console.warn('Recovery error:', e)
+        } finally {
+          isRecovering = false
+        }
+      }
+    } else {
+      lastActiveTime = Date.now()
+    }
+  })
 
   const channel = new BroadcastChannel('zalo_bridge')
   channel.onmessage = (event) => { if (event.data) customHandleParse(event.data) }
 
-  // Clipboard: chỉ parse nếu text mới (tránh parse lại text cũ mỗi lần focus)
+  // Clipboard: chỉ parse nếu text mới
   let lastClipboardText = ''
   window.addEventListener('focus', async () => {
     try {
@@ -591,6 +707,7 @@ onMounted(async () => {
         <span :class="['role-chip', isAdmin ? 'role-admin' : 'role-nv']">
           {{ isAdmin ? '👑 Admin' : '👷 Nhân viên' }}
         </span>
+        <span v-if="!isOnline" class="offline-chip">📵 Offline</span>
       </div>
       <div class="topbar-right">
         <span class="topbar-user">{{ userName }}</span>
@@ -1017,7 +1134,7 @@ onMounted(async () => {
                   <div v-if="!selectedCustomer.media?.length" class="text-muted small mb-3">⏳ Đang tải ảnh...</div>
                   <div class="media-grid">
                     <div v-for="(m, idx) in selectedCustomer.media || []" :key="idx" class="media-item position-relative">
-                      <img v-if="m.type==='image'" :src="m.data" @click="openMediaModal(m)" alt="Ảnh" style="cursor:pointer;" loading="lazy">
+                      <img v-if="m.type!=='video'" :src="m.data" @click="openMediaModal(m)" alt="Ảnh" style="cursor:pointer;" loading="lazy">
                       <video v-else :src="m.data" controls preload="metadata"></video>
                       <span @click.stop="removeMedia(selectedCustomer, idx)" class="media-del">×</span>
                     </div>
@@ -1030,6 +1147,7 @@ onMounted(async () => {
               </div>
             </div>
             <div class="modal-footer">
+              <button @click="openEditModal(selectedCustomer, 'asvn')" class="btn btn-warning fw-bold">✏️ Sửa ca</button>
               <button v-if="isAdmin" @click="deleteCustomer(selectedCustomer.id)" class="btn btn-danger">🗑️ Xóa ca</button>
               <button type="button" class="btn btn-secondary" @click="closeDetailModal">Đóng</button>
             </div>
@@ -1094,7 +1212,7 @@ onMounted(async () => {
                   <div v-if="!selectedOutside.media?.length" class="text-muted small mb-3">⏳ Đang tải ảnh...</div>
                   <div class="media-grid">
                     <div v-for="(m, idx) in selectedOutside.media || []" :key="idx" class="media-item position-relative">
-                      <img v-if="m.type==='image'" :src="m.data" @click="openMediaModal(m)" alt="Ảnh" style="cursor:pointer;" loading="lazy">
+                      <img v-if="m.type!=='video'" :src="m.data" @click="openMediaModal(m)" alt="Ảnh" style="cursor:pointer;" loading="lazy">
                       <video v-else :src="m.data" controls preload="metadata"></video>
                       <span @click.stop="removeMedia(selectedOutside, idx)" class="media-del">×</span>
                     </div>
@@ -1107,6 +1225,7 @@ onMounted(async () => {
               </div>
             </div>
             <div class="modal-footer">
+              <button @click="openEditModal(selectedOutside, 'outside')" class="btn btn-warning fw-bold">✏️ Sửa ca</button>
               <button v-if="isAdmin" @click="deleteCustomer(selectedOutside.id)" class="btn btn-danger">🗑️ Xóa ca</button>
               <button type="button" class="btn btn-secondary" @click="closeOutsideDetailModal">Đóng</button>
             </div>
@@ -1277,6 +1396,55 @@ onMounted(async () => {
 
     </div>
 
+      <!-- ══ MODAL SỬA CA ══ -->
+      <div v-if="showEditModal && editingCa" class="modal fade show" tabindex="-1" style="display:block;background:rgba(0,0,0,0.7);">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+          <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+              <h5 class="modal-title">✏️ Sửa thông tin ca</h5>
+              <button type="button" class="btn-close" @click="closeEditModal"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-3">
+                <label class="form-label fw-bold">Tên khách hàng</label>
+                <input v-model="editingCa.name" type="text" class="form-control" placeholder="Tên khách...">
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-bold">Số điện thoại</label>
+                <input v-model="editingCa.phone" type="tel" class="form-control" placeholder="0905...">
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-bold">Model TV</label>
+                <input v-model="editingCa.model" type="text" class="form-control" placeholder="Xiaomi TV...">
+              </div>
+              <div v-if="editingCaSource === 'asvn'" class="mb-3">
+                <label class="form-label fw-bold">Địa chỉ</label>
+                <input v-model="editingCa.address" type="text" class="form-control" placeholder="Địa chỉ...">
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-bold">Lỗi / Tình trạng</label>
+                <textarea v-model="editingCa.issue" class="form-control" rows="3" placeholder="Mô tả lỗi..."></textarea>
+              </div>
+              <div v-if="editingCaSource === 'asvn'" class="mb-3">
+                <label class="form-label fw-bold">Serial</label>
+                <input v-model="editingCa.serial" type="text" class="form-control" placeholder="Serial number...">
+              </div>
+              <div v-if="editingCaSource === 'asvn'" class="mb-3">
+                <label class="form-label fw-bold">Kho</label>
+                <select v-model="editingCa.warehouse" class="form-select">
+                  <option value="TDP">Kho TDP</option>
+                  <option value="NV">Kho NV</option>
+                </select>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" @click="closeEditModal">Hủy</button>
+              <button type="button" class="btn btn-warning fw-bold" @click="saveEditCa">💾 Lưu thay đổi</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
   </div>
 </template>
 
@@ -1301,6 +1469,7 @@ onMounted(async () => {
 .role-chip    { padding: 0.2rem 0.65rem; border-radius: 20px; font-size: 0.75rem; font-weight: 700; }
 .role-admin   { background: #fef3c7; color: #92400e; }
 .role-nv      { background: #dbeafe; color: #1d4ed8; }
+.offline-chip { background: #fee2e2; color: #991b1b; padding: 0.2rem 0.55rem; border-radius: 20px; font-size: 0.72rem; font-weight: 700; }
 .topbar-right { display: flex; align-items: center; gap: 0.6rem; }
 .topbar-user  { font-size: 0.85rem; color: #94a3b8; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btn-topbar   { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 0.35rem 0.75rem; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all .2s; }
