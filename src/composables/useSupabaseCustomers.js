@@ -45,17 +45,22 @@ export function useSupabaseCustomers() {
 
     const raw = data?.media || []
     return raw.map(m => {
-      // Format mới: storage path
+      // Format mới có source:'storage'
       if (m.source === 'storage' && m.path) {
         return { ...m, data: getPublicUrl(m.path) }
       }
-      // Format cũ: object có sẵn data (base64 hoặc drive url)
-      if (m.data) return m
-      // Format rất cũ: có thể là string thẳng
+      // Format mới KHÔNG có source nhưng có path (upload từ code mới)
+      if (m.path && !m.data) {
+        return { ...m, type: m.type || 'image', source: 'storage', data: getPublicUrl(m.path) }
+      }
+      // Format cũ: có data base64 hoặc drive url
+      if (m.data) {
+        return { ...m, type: m.type || 'image' }
+      }
+      // Format string thẳng
       if (typeof m === 'string') {
         return { type: 'image', data: m, source: 'local' }
       }
-      // Fallback: object thiếu data → bỏ qua
       return null
     }).filter(Boolean)
   }

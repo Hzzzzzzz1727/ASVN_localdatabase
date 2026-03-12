@@ -532,12 +532,13 @@ const addSingleDrive = async (item) => {
   updateLocalMedia(item.id, currentMedia)
 }
 const removeMedia = async (item, index) => {
+  if (!confirm('Bạn có chắc muốn xóa ảnh/video này?')) return
   const currentMedia = await loadMediaCached(item.id)
-  // Xóa file khỏi Storage nếu là storage item
   const updated = await removeMediaItem(currentMedia, index)
   await supabase.from('customers').update({ media: updated }).eq('id', item.id)
   mediaCache.set(item.id, updated)
   updateLocalMedia(item.id, updated)
+  showToast('Đã xóa ảnh!', 'success')
 }
 
 // ── DRIVE FOLDER ──────────────────────────────────────────────
@@ -1529,7 +1530,7 @@ onMounted(async () => {
 .media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 0.75rem; margin: 1rem 0; }
 .media-item { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; }
 .media-item img, .media-item video { width: 100%; height: 100%; object-fit: cover; cursor: pointer; }
-.media-del { position: absolute; top: -6px; right: -6px; background: #ef4444; color: #fff; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer; z-index: 10; font-weight: bold; }
+.media-del { position: absolute; top: -8px; right: -8px; background: #ef4444; color: #fff; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 16px; cursor: pointer; z-index: 10; font-weight: bold; box-shadow: 0 2px 6px rgba(0,0,0,0.3); border: 2px solid #fff; }
 .media-add { aspect-ratio: 1; border: 2px dashed #cbd5e0; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #94a3b8; font-size: 24px; transition: all .2s; }
 .media-add:hover { border-color: #3b82f6; background: #eff6ff; color: #3b82f6; }
 
@@ -1537,7 +1538,7 @@ onMounted(async () => {
 .date-pill { background: linear-gradient(135deg, #10b981, #059669); color: #fff; padding: 0.5rem 1rem; border-radius: 20px; font-weight: 600; font-size: 0.9rem; }
 
 /* ── Media modal ──────────────────────────────────────────── */
-.media-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.9); display: flex; align-items: center; justify-content: center; z-index: 1000; cursor: pointer; }
+.media-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.9); display: flex; align-items: center; justify-content: center; z-index: 9000; cursor: pointer; }
 .media-modal-content { position: relative; max-width: 95vw; max-height: 95vh; background: #000; border-radius: 12px; overflow: hidden; }
 .modal-media { max-width: 100%; max-height: 95vh; object-fit: contain; display: block; }
 .modal-close { position: absolute; top: 15px; right: 15px; background: rgba(0,0,0,.5); color: #fff; border: none; font-size: 28px; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; z-index: 10; }
