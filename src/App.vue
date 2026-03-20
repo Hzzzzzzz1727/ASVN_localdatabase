@@ -10,6 +10,7 @@ import { useLinhKienManager } from '@/composables/useLinhKienManager'
 import { useAuth } from '@/composables/useAuth'
 
 import LoginPage from '@/components/LoginPage.vue'
+import RevenueChart from '@/components/RevenueChart.vue'
 import AdminPanel from '@/components/AdminPanel.vue'
 
 // ── AUTH ──────────────────────────────────────────────────────
@@ -20,7 +21,8 @@ const {
 } = useAuth()
 
 const showAdminPanel = ref(false)
-const showStats = ref(false)
+const showStats  = ref(false)
+const showChart  = ref(false)
 const isOnline = ref(navigator.onLine)
 window.addEventListener('online',  () => { isOnline.value = true;  showToast('Đã kết nối lại!', 'success') })
 window.addEventListener('offline', () => { isOnline.value = false; showToast('Mất kết nối mạng!', 'error', 0) })
@@ -52,7 +54,7 @@ const loadMediaCached = async (id) => {
     // Timeout 8s - nếu Supabase không response thì trả về [] thay vì treo
     const media = await Promise.race([
       loadMediaForItem(id),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 20000))
     ])
     mediaCache.set(id, media)
     return [...media]
@@ -118,9 +120,13 @@ const customHandleParse = async (text) => {
       if (existPSC) { showToast(`Ca ${ticketPSC} đã tồn tại!`, 'warning'); rawInput.value = ''; return }
 
       const namePSC = text.match(/\*\s*Họ tên\s*:\s*(.+?)$/im)?.[1]?.trim()
-        || text.match(/\bName\s*:\s*(.+?)(?=\s+Phone\s*Number|\s+Address|\n|$)/i)?.[1]?.trim() || 'Khách'
+        || text.match(/\bName\s*:\s*(.+?)(?=\s+Phone\s*Number|\s+Address|\n|$)/i)?.[1]?.trim()
+        || text.match(/Report\s*person\s*:.*?(?:End\s+user\s+)?((?:Anh|Chị|chị|Bác|bác|Ông|ông|Bà|bà|Chú|chú|Em|em|Cô|cô)\s+[^\s\-,\n(+]+)/i)?.[1]?.trim()
+        || 'Khách'
       const rawPhPSC = text.match(/\*\s*Điện thoại\s*:\s*([\+\d]+)/i)?.[1]
-        || text.match(/Phone\s*Number\s*:\s*([\+\d]+)/i)?.[1] || ''
+        || text.match(/Phone\s*Number\s*:\s*([\+\d]+)/i)?.[1]
+        || text.match(/Report\s*person\s*:.*?(?:Anh|Chị|chị|Bác|bác|Ông|ông|Bà|bà|Chú|chú|Em|em|Cô|cô)\s+\S+\s+([\+\d]{9,13})/i)?.[1]
+        || ''
       const phonePSC = rawPhPSC.replace(/^\+84/, '0')
       const addrRawPSC = text.match(/\*\s*Địa chỉ\s*:\s*(.+?)(?=\n\s*\*|\n\s*Tên Đại|$)/is)?.[1]
         || text.match(/\bAddress\s*:\s*(.+?)(?=\s*Faulty description|\s*CS handle|$)/is)?.[1] || ''
@@ -162,13 +168,13 @@ const customHandleParse = async (text) => {
 
     const nameHoTen  = text.match(/\*\s*Họ tên\s*:\s*(.+?)$/im)
     const nameCust   = text.match(/Customer Name\s*:\s*(.+?)(?:\s+Customer|\n|$)/i)
-    const nameReport = text.match(/Report\s*[Pp]erson\s*:.*?((?:Anh|Chị|chị|Bác|bác|Ông|ông|Bà|bà|Chú|chú|Em|em|Cô|cô)\s+[^\s\-,\n(]+)/i)
+    const nameReport = text.match(/Report\s*[Pp]erson\s*:.*?(?:End\s+user\s+)?((?:Anh|Ch\u1ecb|ch\u1ecb|B\u00e1c|b\u00e1c|\u00d4ng|\u00f4ng|B\u00e0|b\u00e0|Ch\u00fa|ch\u00fa|Em|em|C\u00f4|c\u00f4)\s+[^\s\-,\n(]+)/i)
     const nameShort  = text.replace(fullTicketId, '').trim().match(/^((?:Anh|Chị|chị|Bác|bác|Ông|ông|Bà|bà|Chú|chú|Em|em|Cô|cô)\s+[^\s,|\n(]+)/)
     const name = (nameHoTen?.[1] || nameCust?.[1] || nameReport?.[1] || nameShort?.[1] || 'Khách NV').trim()
 
     const phoneLine   = text.match(/\*\s*Điện thoại\s*:\s*([\+\d]+)/i)
     const phoneCust   = text.match(/Customer Phone\s*:\s*([\+\d]+)/i)
-    const phoneReport = text.match(/Report\s*[Pp]erson\s*:\s*([\+\d]+)/i)
+    const phoneReport = text.match(/Report\s*[Pp]erson\s*:.*?(?:Anh|Ch\u1ecb|ch\u1ecb|B\u00e1c|b\u00e1c|\u00d4ng|\u00f4ng|B\u00e0|b\u00e0|Ch\u00fa|ch\u00fa|Em|em|C\u00f4|c\u00f4)\s+\S+\s+([\+\d]{9,13})/i)
     const phoneAny    = text.match(/(?<!\d)(?:\+84|0)[3-9][0-9]{8}(?!\d)/)
     const rawPhone    = phoneLine?.[1] || phoneCust?.[1] || phoneReport?.[1] || phoneAny?.[0] || ''
     const phone = rawPhone.replace(/^\+84/, '0')
@@ -265,6 +271,51 @@ const saveEditCa = async () => {
   closeEditModal()
 }
 
+// ── GIÁ TIỀN & LINH KIỆN ─────────────────────────────────────
+const editingPrice   = ref(0)
+const editingLkItems = ref([])
+const newLkName      = ref('')
+const newLkPrice     = ref(0)
+const showLkForm     = ref(false)
+
+const formatPrice = (n) => {
+  if (!n) return '0đ'
+  return Number(n).toLocaleString('vi-VN') + 'đ'
+}
+const totalLkPrice = (items) => (items || []).reduce((s, i) => s + (Number(i.price) || 0), 0)
+
+const openPriceEditor = (customer) => {
+  editingPrice.value = customer.price || 0
+  editingLkItems.value = JSON.parse(JSON.stringify(customer.lkItems || []))
+  showLkForm.value = true
+}
+const addLkItem = () => {
+  if (!newLkName.value.trim()) return
+  editingLkItems.value.push({ name: newLkName.value.trim(), price: Number(newLkPrice.value) || 0 })
+  newLkName.value = ''
+  newLkPrice.value = 0
+}
+const removeLkItem = (idx) => editingLkItems.value.splice(idx, 1)
+
+const savePriceAndLk = async (customer) => {
+  if (!customer) return
+  const autoPrice = totalLkPrice(editingLkItems.value)
+  const finalPrice = editingPrice.value || autoPrice
+  // Tự tổng hợp tên linh kiện vào replacedPart để giữ tương thích Excel + hiển thị card
+  const partSummary = editingLkItems.value.length
+    ? editingLkItems.value.map(lk => lk.name).join(', ')
+    : customer.replacedPart || 'Chưa có'
+  const updates = { price: finalPrice, lkItems: editingLkItems.value, replacedPart: partSummary }
+  await supabase.from('customers').update(updates).eq('id', customer.id)
+  updateLocalCustomer(customer.id, updates)
+  if (selectedCustomer.value?.id === customer.id)
+    selectedCustomer.value = { ...selectedCustomer.value, ...updates }
+  if (selectedOutside.value?.id === customer.id)
+    selectedOutside.value = { ...selectedOutside.value, ...updates }
+  showLkForm.value = false
+  showToast('✅ Đã lưu giá tiền!', 'success')
+}
+
 // ── MODALS ────────────────────────────────────────────────────
 const showDetailModal        = ref(false)
 const selectedCustomer       = ref(null)
@@ -272,6 +323,7 @@ const editingPart2           = ref('')
 const showModal              = ref(false)
 const modalMedia             = ref(null)
 const showTreModal           = ref(false)
+const showChoLkTreModal      = ref(false)
 const showOutsideForm        = ref(false)
 const outsideForm            = ref({ name: '', phone: '', brand: '', model: '', issue: '' })
 const showOutsideDetailModal = ref(false)
@@ -279,40 +331,45 @@ const selectedOutside        = ref(null)
 const editingOutsidePart     = ref('')
 
 // ── MODAL HANDLERS ────────────────────────────────────────────
-const openDetailModalFull = async (customer) => {
+const openDetailModalFull = (customer) => {
   selectedCustomer.value = { ...customer, media: [] }
   editingPart2.value = customer.replacedPart || ''
   showDetailModal.value = true
   document.body.style.overflow = 'hidden'
-  const media = await loadMediaCached(customer.id)
-  if (selectedCustomer.value) selectedCustomer.value = { ...selectedCustomer.value, media }
-  // Migrate base64 cũ sang Storage ngầm (không block UI)
-  if (media.some(m => m.source === 'local' || (!m.source && m.data?.startsWith('data:')))) {
-    migrateBase64ToStorage(customer.id, media).then(migrated => {
-      mediaCache.set(customer.id, migrated)
-      if (selectedCustomer.value?.id === customer.id)
-        selectedCustomer.value = { ...selectedCustomer.value, media: migrated }
-    })
-  }
+  // Load ảnh hoàn toàn nền - không block modal
+  loadMediaCached(customer.id).then(media => {
+    if (!selectedCustomer.value || selectedCustomer.value.id !== customer.id) return
+    selectedCustomer.value = { ...selectedCustomer.value, media }
+    // Migrate base64 cũ sang Storage ngầm
+    if (media.some(m => m.source === 'local' || (!m.source && m.data?.startsWith('data:')))) {
+      migrateBase64ToStorage(customer.id, media).then(migrated => {
+        mediaCache.set(customer.id, migrated)
+        if (selectedCustomer.value?.id === customer.id)
+          selectedCustomer.value = { ...selectedCustomer.value, media: migrated }
+      })
+    }
+  })
 }
 const closeDetailModal = () => {
   showDetailModal.value = false; selectedCustomer.value = null; document.body.style.overflow = ''
 }
 
-const openOutsideDetailModal = async (item) => {
+const openOutsideDetailModal = (item) => {
   selectedOutside.value = { ...item, media: [] }
   editingOutsidePart.value = item.replacedPart || ''
   showOutsideDetailModal.value = true
   document.body.style.overflow = 'hidden'
-  const media = await loadMediaCached(item.id)
-  if (selectedOutside.value) selectedOutside.value = { ...selectedOutside.value, media }
-  if (media.some(m => m.source === 'local' || (!m.source && m.data?.startsWith('data:')))) {
-    migrateBase64ToStorage(item.id, media).then(migrated => {
-      mediaCache.set(item.id, migrated)
-      if (selectedOutside.value?.id === item.id)
-        selectedOutside.value = { ...selectedOutside.value, media: migrated }
-    })
-  }
+  loadMediaCached(item.id).then(media => {
+    if (!selectedOutside.value || selectedOutside.value.id !== item.id) return
+    selectedOutside.value = { ...selectedOutside.value, media }
+    if (media.some(m => m.source === 'local' || (!m.source && m.data?.startsWith('data:')))) {
+      migrateBase64ToStorage(item.id, media).then(migrated => {
+        mediaCache.set(item.id, migrated)
+        if (selectedOutside.value?.id === item.id)
+          selectedOutside.value = { ...selectedOutside.value, media: migrated }
+      })
+    }
+  })
 }
 const closeOutsideDetailModal = () => {
   showOutsideDetailModal.value = false; selectedOutside.value = null; document.body.style.overflow = ''
@@ -354,6 +411,9 @@ const stats = computed(() => {
     hoanThanhHomNay: asvn.filter(c => c.status === 2 && c.doneDate === today).length,
     csvnTong:       customers.value.filter(c => c.ticketId?.startsWith('CSVN')).length,
     ngoaiTong:      customers.value.filter(c => c.ticketId?.startsWith('NGOAI')).length,
+    doanhThuHomNay: asvn.filter(c => c.status === 2 && c.doneDate === today).reduce((s,c) => s + (c.price||0), 0),
+    doanhThuThang:  asvn.filter(c => c.status === 2 && c.doneDate?.endsWith(`/${new Date().getMonth()+1}/${new Date().getFullYear()}`)).reduce((s,c) => s + (c.price||0), 0),
+    choLkTre:       asvn.filter(c => c.status === 1 && c.statusLog?.length && (() => { const last = [...c.statusLog].reverse().find(l=>l.status===1); if (!last) return false; const d = last.at?.match(/(\d+)\/(\d+)\/(\d+)/); if (!d) return false; const t = new Date(d[3],d[2]-1,d[1]); return Date.now()-t.getTime() > 3*86400000 })()).length,
   }
 })
 
@@ -370,7 +430,7 @@ const filteredCustomers = computed(() => {
   return f.filter(c =>
     c.name?.toLowerCase().includes(q) || c.phone?.includes(q) ||
     c.ticketId?.toLowerCase().includes(q) || c.model?.toLowerCase().includes(q) ||
-    c.replacedPart?.toLowerCase().includes(q)
+    c.replacedPart?.toLowerCase().includes(q) || c.serial?.toLowerCase().includes(q)
   )
 })
 
@@ -391,6 +451,19 @@ const hoanThanh   = computed(() => {
 const outsideDangLam     = computed(() => filteredCustomers.value.filter(c => c.status === 0))
 const outsideChoLinhKien = computed(() => filteredCustomers.value.filter(c => c.status === 1))
 const outsideHoanThanh   = computed(() => filteredCustomers.value.filter(c => c.status === 2))
+// Ca chờ LK trễ > 3 ngày
+const choLkTreList = computed(() => {
+  return customers.value.filter(c => {
+    if (c.status !== 1) return false
+    const last = c.statusLog ? [...c.statusLog].reverse().find(l => l.status === 1) : null
+    if (!last) return false
+    const m = last.at?.match(/(\d+)\/(\d+)\/(\d+)/)
+    if (!m) return false
+    const t = new Date(m[3], m[2]-1, m[1])
+    return Date.now() - t.getTime() > 3 * 86400000
+  })
+})
+
 const treCaList = computed(() => {
   const now = Date.now()
   return filteredCustomers.value.filter(c => c.status === 0 && c.createdAt && now - new Date(c.createdAt).getTime() > 86400000)
@@ -436,16 +509,33 @@ const dongCa = async (item) => {
   showToast('Đã chốt ca hoàn thành!', 'success')
 }
 const revertToDangLam = async (item) => {
-  await supabase.from('customers').update({ status: 0, doneDate: null }).eq('id', item.id)
-  updateLocalCustomer(item.id, { status: 0, doneDate: null })
+  const updates = { status: 0, doneDate: null, price: 0, lkItems: [], replacedPart: 'Chưa có' }
+  await supabase.from('customers').update(updates).eq('id', item.id)
+  updateLocalCustomer(item.id, updates)
+  if (selectedCustomer.value?.id === item.id)
+    selectedCustomer.value = { ...selectedCustomer.value, ...updates }
   if (showDetailModal.value) closeDetailModal()
   showToast('Đã hoàn lại trạng thái đang làm!', 'warning')
 }
+const STATUS_LABEL = { 0: 'Đang làm', 1: 'Chờ linh kiện', 2: 'Hoàn thành' }
+const appendStatusLog = (existingLog, status) => {
+  const log = Array.isArray(existingLog) ? [...existingLog] : []
+  const now = new Date()
+  log.push({
+    status,
+    label: STATUS_LABEL[status],
+    by: userName.value || 'Unknown',
+    at: now.toLocaleString('vi-VN', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })
+  })
+  return log
+}
+
 const changeStatus = async (status) => {
   if (!selectedCustomer.value) return
   const now = new Date()
   const dateStr = `${now.getDate().toString().padStart(2,'0')}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getFullYear()}`
-  const updates = status === 2 ? { status, doneDate: dateStr } : { status, doneDate: null }
+  const newLog = appendStatusLog(selectedCustomer.value.statusLog, status)
+  const updates = status === 2 ? { status, doneDate: dateStr, statusLog: newLog } : { status, doneDate: null, statusLog: newLog }
   await supabase.from('customers').update(updates).eq('id', selectedCustomer.value.id)
   selectedCustomer.value = { ...selectedCustomer.value, ...updates }
   updateLocalCustomer(selectedCustomer.value.id, updates)
@@ -455,7 +545,8 @@ const changeOutsideStatus = async (status) => {
   if (!selectedOutside.value) return
   const now = new Date()
   const dateStr = `${now.getDate().toString().padStart(2,'0')}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getFullYear()}`
-  const updates = status === 2 ? { status, doneDate: dateStr } : { status, doneDate: null }
+  const newLog = appendStatusLog(selectedOutside.value.statusLog, status)
+  const updates = status === 2 ? { status, doneDate: dateStr, statusLog: newLog } : { status, doneDate: null, statusLog: newLog }
   await supabase.from('customers').update(updates).eq('id', selectedOutside.value.id)
   selectedOutside.value = { ...selectedOutside.value, ...updates }
   updateLocalCustomer(selectedOutside.value.id, updates)
@@ -580,6 +671,61 @@ const exportToExcel = (data, fileName) => {
 const exportHoanThanhByWarehouse = (wh) => exportToExcel(customers.value.filter(c => c.status === 2 && c.ticketId?.startsWith('ASVN') && c.warehouse === wh), `Bao-Cao-Hoan-Thanh-${wh}`)
 const exportAllHoanThanh = () => exportToExcel(customers.value.filter(c => c.status === 2 && c.ticketId?.startsWith('ASVN')), 'Bao-Cao-Hoan-Thanh-All')
 
+// ── SWIPE ĐỔI TRẠNG THÁI ──────────────────────────────────────
+const setupSwipe = (el, item, isOutside = false) => {
+  if (!el) return
+  let startX = 0, startY = 0, swiping = false
+
+  el.addEventListener('touchstart', (e) => {
+    startX = e.touches[0].clientX
+    startY = e.touches[0].clientY
+    swiping = true
+  }, { passive: true })
+
+  el.addEventListener('touchend', async (e) => {
+    if (!swiping) return
+    swiping = false
+    const dx = e.changedTouches[0].clientX - startX
+    const dy = e.changedTouches[0].clientY - startY
+    // Chỉ xử lý nếu vuốt ngang > 60px và ngang hơn dọc
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return
+
+    const now = new Date()
+    const dateStr = `${now.getDate().toString().padStart(2,'0')}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getFullYear()}`
+
+    if (dx > 0) {
+      // Vuốt PHẢI → Xong
+      if (item.status === 2) return
+      if (!confirm(`Chốt xong ca ${item.ticketId}?`)) return
+      const newLog = appendStatusLog(item.statusLog, 2)
+      const updates = { status: 2, doneDate: dateStr, statusLog: newLog }
+      await supabase.from('customers').update(updates).eq('id', item.id)
+      updateLocalCustomer(item.id, updates)
+      showToast(`✅ Xong: ${item.ticketId}`, 'success')
+    } else {
+      // Vuốt TRÁI → Chờ LK
+      if (item.status === 1) return
+      const newLog = appendStatusLog(item.statusLog, 1)
+      const updates = { status: 1, doneDate: null, statusLog: newLog }
+      await supabase.from('customers').update(updates).eq('id', item.id)
+      updateLocalCustomer(item.id, updates)
+      showToast(`⏳ Chờ LK: ${item.ticketId}`, 'warning')
+    }
+
+    // Visual feedback
+    el.style.transition = 'transform 0.2s'
+    el.style.transform = `translateX(${dx > 0 ? '8px' : '-8px'})`
+    setTimeout(() => { el.style.transform = ''; el.style.transition = '' }, 200)
+  }, { passive: true })
+}
+
+// ── CHIA SẺ THÔNG TIN CA ──────────────────────────────────────
+const shareCustomer = (customer) => {
+  // Mở trang chia sẻ riêng trong tab mới
+  const url = `${location.origin}${location.pathname.replace(/\/[^/]*$/, '')}/share.html?id=${customer.id}`
+  window.open(url, '_blank')
+}
+
 // ── MOUNTED ───────────────────────────────────────────────────
 onMounted(async () => {
   await initAuth()
@@ -594,89 +740,101 @@ onMounted(async () => {
     }
   })
 
-  // ── REALTIME với auto-reconnect ────────────────────────────
+  // ── REALTIME ───────────────────────────────────────────────
   let realtimeDebounce = null
   let realtimeChannel = null
+  let realtimeRetryTimer = null
 
   const setupRealtime = () => {
-    // Hủy channel cũ nếu có
+    clearTimeout(realtimeRetryTimer)
     if (realtimeChannel) {
-      supabase.removeChannel(realtimeChannel)
+      try { supabase.removeChannel(realtimeChannel) } catch {}
       realtimeChannel = null
     }
     realtimeChannel = supabase
-      .channel('customers-realtime-' + Date.now()) // tên unique để tránh conflict
+      .channel('tvrepair-' + Date.now())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => {
         clearTimeout(realtimeDebounce)
-        realtimeDebounce = setTimeout(() => {
-          mediaCache.clear()
-          loadData()
-        }, 1500)
+        realtimeDebounce = setTimeout(async () => {
+          // Không reload nếu đang parse ca mới (tránh conflict)
+          if (isParsing.value) return
+          await loadData()
+        }, 3000)
       })
       .subscribe((status) => {
-        // Nếu bị lỗi hoặc closed → thử reconnect sau 5s
         if (status === 'CHANNEL_ERROR' || status === 'CLOSED') {
-          setTimeout(setupRealtime, 5000)
+          realtimeRetryTimer = setTimeout(setupRealtime, 8000)
         }
       })
   }
   setupRealtime()
 
-  // ── Keepalive: 2 phút ping 1 lần để giữ session + connection ─
+  // ── Keepalive 3 phút: giữ session + kiểm tra realtime ─────
   setInterval(async () => {
-    // Ping nhẹ để giữ auth session sống
+    if (!isLoggedIn.value) return
     try { await supabase.auth.getSession() } catch {}
-    // Kiểm tra realtime channel
-    if (!realtimeChannel) { setupRealtime(); return }
-    const state = realtimeChannel.state
-    if (state !== 'joined') setupRealtime()
-  }, 2 * 60 * 1000)
-
-  // ── Khi tab trở lại foreground → refresh session + reload ───
-  let lastActiveTime = Date.now()
-  let isRecovering = false
-  document.addEventListener('visibilitychange', async () => {
-    if (document.visibilityState === 'visible') {
-      if (isRecovering) return
-      const awayMs = Date.now() - lastActiveTime
-      // Nếu tab bị ẩn > 1 phút → refresh session + reload
-      if (awayMs > 60 * 1000) {
-        isRecovering = true
-        try {
-          // Refresh Supabase auth session trước (quan trọng nhất!)
-          const { error: sessionError } = await supabase.auth.refreshSession()
-          if (sessionError) {
-            // Session hết hạn hoàn toàn → logout và redirect login
-            await logout()
-            return
-          }
-          mediaCache.clear()
-          await loadData()
-          setupRealtime()
-        } catch (e) {
-          console.warn('Recovery error:', e)
-        } finally {
-          isRecovering = false
-        }
-      }
-    } else {
-      lastActiveTime = Date.now()
+    const state = realtimeChannel?.state
+    if (!realtimeChannel || (state !== 'joined' && state !== 'joining')) {
+      setupRealtime()
     }
+  }, 3 * 60 * 1000)
+
+  // ── Visibility change: phục hồi khi tab quay lại ──────────
+  let hiddenAt = 0
+  let recoveryTimer = null
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      hiddenAt = Date.now()
+      return
+    }
+
+    // Tab visible trở lại
+    clearTimeout(recoveryTimer)
+    const awayMs = Date.now() - hiddenAt
+
+    // Ẩn < 2 phút: không làm gì cả
+    if (awayMs < 2 * 60_000) return
+
+    // Ẩn 2–10 phút: chỉ reconnect realtime nếu cần, không reload data
+    if (awayMs < 10 * 60_000) {
+      if (realtimeChannel?.state !== 'joined') setupRealtime()
+      return
+    }
+
+    // Ẩn > 10 phút: refresh session + reload đầy đủ
+    // Dùng timer để không block event handler
+    recoveryTimer = setTimeout(async () => {
+      if (!isLoggedIn.value) return
+      try {
+        const { error } = await supabase.auth.refreshSession()
+        if (error) { await logout(); return }
+        mediaCache.clear()
+        await loadData()
+        setupRealtime()
+        showToast('Đã đồng bộ lại dữ liệu', 'success', 2000)
+      } catch {}
+    }, 300)
   })
 
   const channel = new BroadcastChannel('zalo_bridge')
   channel.onmessage = (event) => { if (event.data) customHandleParse(event.data) }
 
-  // Clipboard: chỉ parse nếu text mới
+  // Clipboard: debounce 500ms + guard isParsing
   let lastClipboardText = ''
-  window.addEventListener('focus', async () => {
-    try {
-      const text = await navigator.clipboard.readText()
-      if (text && text !== lastClipboardText && (text.includes('ASVN') || text.includes('CSVN'))) {
-        lastClipboardText = text
-        customHandleParse(text)
-      }
-    } catch {}
+  let clipboardDebounce = null
+  window.addEventListener('focus', () => {
+    clearTimeout(clipboardDebounce)
+    clipboardDebounce = setTimeout(async () => {
+      if (isParsing.value) return
+      try {
+        const text = await navigator.clipboard.readText()
+        if (text && text !== lastClipboardText && (text.includes('ASVN') || text.includes('CSVN'))) {
+          lastClipboardText = text
+          customHandleParse(text)
+        }
+      } catch {}
+    }, 500)
   })
 })
 </script>
@@ -695,13 +853,26 @@ onMounted(async () => {
   <!-- App chính -->
   <div v-else class="page-wrap">
 
+    <!-- TRANG BIỂU ĐỒ (fullscreen overlay) -->
+    <div v-if="showChart" class="chart-overlay">
+      <div class="chart-overlay-header">
+        <button @click="showChart = false" class="btn-back">← Quay lại</button>
+      </div>
+      <RevenueChart
+        :dangLamAll="stats.dangLamAll"
+        :choLKAll="stats.choLKAll"
+        :tongTat="stats.tongTat"
+        :choLkTre="stats.choLkTre"
+      />
+    </div>
+
     <!-- TOAST -->
     <div class="toast-container">
       <div v-for="t in toasts" :key="t.id" :class="['toast-item', `toast-${t.type}`]">{{ t.message }}</div>
     </div>
 
     <!-- TOP BAR -->
-    <div class="topbar">
+    <div v-show="!showChart" class="topbar">
       <div class="topbar-left">
         <span class="topbar-logo">📺</span>
         <span class="topbar-appname">TV Repair</span>
@@ -713,9 +884,9 @@ onMounted(async () => {
       <div class="topbar-right">
         <span class="topbar-user">{{ userName }}</span>
         <button v-if="isAdmin"
-          @click="showStats = !showStats"
-          :class="['btn-topbar', showStats ? 'btn-topbar--active' : '']">
-          📊 <span class="btn-text">Thống kê</span>
+          @click="showChart = true"
+          class="btn-topbar">
+          📈 <span class="btn-text">Biểu đồ</span>
         </button>
         <button v-if="isAdmin"
           @click="showAdminPanel = !showAdminPanel"
@@ -726,8 +897,8 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- STATS PANEL -->
-    <div v-if="showStats && isAdmin" class="stats-wrap">
+    <!-- STATS PANEL ẩn - số liệu đã có trong trang Biểu đồ -->
+    <div v-if="false" class="stats-wrap">
       <div class="stats-grid">
         <div class="stat-card stat-blue">
           <div class="stat-num">{{ stats.dangLamAll }}</div>
@@ -744,6 +915,14 @@ onMounted(async () => {
         <div class="stat-card stat-teal">
           <div class="stat-num">{{ stats.hoanThanhHomNay }}</div>
           <div class="stat-label">🗓️ Xong hôm nay</div>
+        </div>
+        <div class="stat-card stat-money">
+          <div class="stat-num" style="font-size:1.3rem;">{{ formatPrice(stats.doanhThuHomNay) }}</div>
+          <div class="stat-label">💰 Doanh thu hôm nay</div>
+        </div>
+        <div class="stat-card stat-money2">
+          <div class="stat-num" style="font-size:1.3rem;">{{ formatPrice(stats.doanhThuThang) }}</div>
+          <div class="stat-label">📈 Doanh thu tháng này</div>
         </div>
       </div>
       <div class="stats-row2">
@@ -763,11 +942,11 @@ onMounted(async () => {
     </div>
 
     <!-- ADMIN PANEL -->
-    <div v-if="showAdminPanel && isAdmin" class="admin-panel-wrap">
+    <div v-if="showAdminPanel && isAdmin && !showChart" class="admin-panel-wrap">
       <AdminPanel />
     </div>
 
-    <div class="layout">
+    <div v-show="!showChart" class="layout">
       <div class="control-card">
 
         <!-- Toggle loại ca -->
@@ -826,17 +1005,31 @@ onMounted(async () => {
               <textarea v-model="rawInput" rows="2" class="form-control flex-grow-1 me-3"
                 placeholder="Dán nội dung hoặc đợi tin nhắn Zalo..."
                 @keyup.enter="customHandleParse(rawInput)"></textarea>
-              <div class="position-relative" style="min-width:50px;">
-                <button class="btn btn-outline-warning position-relative rounded-circle p-2 shadow"
-                  style="width:50px;height:50px;display:flex;align-items:center;justify-content:center;"
-                  @click="openTreModal">
-                  <span style="font-size:1.8rem;">🔔</span>
-                  <span v-if="treCaList.length > 0"
-                    class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger border border-white"
-                    style="font-size:0.75rem;min-width:20px;height:20px;line-height:1.2;padding:0;">
-                    {{ treCaList.length }}
-                  </span>
-                </button>
+              <div class="d-flex gap-2">
+                <div class="position-relative" style="min-width:50px;">
+                  <button class="btn btn-outline-warning position-relative rounded-circle p-2 shadow"
+                    style="width:50px;height:50px;display:flex;align-items:center;justify-content:center;"
+                    @click="openTreModal" title="Ca đang làm trễ">
+                    <span style="font-size:1.8rem;">🔔</span>
+                    <span v-if="treCaList.length > 0"
+                      class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger border border-white"
+                      style="font-size:0.75rem;min-width:20px;height:20px;line-height:1.2;padding:0;">
+                      {{ treCaList.length }}
+                    </span>
+                  </button>
+                </div>
+                <div class="position-relative" style="min-width:50px;">
+                  <button class="btn btn-outline-danger position-relative rounded-circle p-2 shadow"
+                    style="width:50px;height:50px;display:flex;align-items:center;justify-content:center;"
+                    @click="showChoLkTreModal = true" title="Ca chờ LK trễ >3 ngày">
+                    <span style="font-size:1.8rem;">⏰</span>
+                    <span v-if="choLkTreList.length > 0"
+                      class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger border border-white"
+                      style="font-size:0.75rem;min-width:20px;height:20px;line-height:1.2;padding:0;">
+                      {{ choLkTreList.length }}
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
             <div class="control-actions">
@@ -850,21 +1043,7 @@ onMounted(async () => {
           </div>
 
           <div v-else-if="showTab === 'cholinkien'" class="control-body">
-            <div class="d-flex flex-column gap-3">
-              <div class="d-flex gap-3 flex-wrap align-items-end">
-                <input v-model="searchTicketId" type="text" class="form-control flex-grow-1"
-                  placeholder="Nhập mã ASVN cần cập nhật..." @keyup.enter="loadPartForEdit">
-                <button @click="loadPartForEdit" class="btn btn-outline-primary">Tìm</button>
-              </div>
-              <div class="d-flex gap-3 flex-wrap align-items-end">
-                <input v-model="newReplacedPart" type="text" class="form-control flex-grow-1"
-                  :placeholder="editingPart ? 'Sửa linh kiện...' : 'Loại linh kiện thay...'"
-                  @click="openPartModal">
-                <button @click="saveLinhKien" class="btn btn-success px-4 fw-bold">{{ editingPart ? 'Sửa' : 'Lưu' }}</button>
-                <button v-if="editingPart" @click="deleteLinhKien" class="btn btn-danger px-4 fw-bold">Xóa</button>
-              </div>
-              <input v-model="searchQuery" type="text" class="form-control" placeholder="Tìm theo tên, sđt, mã ca, model, linh kiện...">
-            </div>
+            <input v-model="searchQuery" type="text" class="form-control" placeholder="🔍 Tìm theo tên, SĐT, mã ca, model, serial, linh kiện...">
           </div>
 
           <div v-else-if="showTab === 'hoanthanh'" class="control-body">
@@ -907,8 +1086,11 @@ onMounted(async () => {
             <div v-if="dangLam.length">
               <h5 class="mb-3">Đang làm ({{ dangLam.length }})</h5>
               <div class="case-strip">
-                <div v-for="item in dangLam" :key="item.id" class="case-card"
+                <div v-for="item in dangLam" :key="item.id" class="case-card swipe-card"
+                  :ref="el => el && setupSwipe(el, item)"
                   @click="openDetailModalFull(item)" style="cursor:pointer;">
+                  <div class="swipe-hint-right">✅ Xong</div>
+                  <div class="swipe-hint-left">⏳ Chờ LK</div>
                   <div class="card border-0 shadow-sm h-100">
                     <div class="card-body border-start border-5 border-primary d-flex flex-column">
                       <div class="d-flex justify-content-between align-items-start mb-2">
@@ -941,8 +1123,11 @@ onMounted(async () => {
             <div v-if="choLinhKien.length">
               <h5 class="mb-3">Chờ linh kiện ({{ choLinhKien.length }})</h5>
               <div class="case-strip">
-                <div v-for="item in choLinhKien" :key="item.id" class="case-card"
+                <div v-for="item in choLinhKien" :key="item.id" class="case-card swipe-card"
+                  :ref="el => el && setupSwipe(el, item)"
                   @click="openDetailModalFull(item)" style="cursor:pointer;">
+                  <div class="swipe-hint-right">✅ Xong</div>
+                  <div class="swipe-hint-left">⚡ Đang làm</div>
                   <div class="card border-0 shadow-sm h-100">
                     <div class="card-body border-start border-5 border-warning d-flex flex-column">
                       <div class="d-flex justify-content-between align-items-start mb-2 flex-wrap gap-2">
@@ -984,7 +1169,10 @@ onMounted(async () => {
                         <div class="d-flex justify-content-between mb-2 flex-wrap gap-2">
                           <span class="fw-bold text-success">{{ item.ticketId }} - {{ item.name }}</span>
                           <span v-if="item.warehouse" class="badge" :class="getWarehouseBadgeClass(item.warehouse)">{{ getWarehouseLabel(item) }}</span>
-                          <button @click.stop="revertToDangLam(item)" class="btn btn-sm btn-warning">Hoàn lại</button>
+                          <div class="d-flex gap-1">
+                            <button @click.stop="shareCustomer(item)" class="btn btn-sm btn-info text-white fw-bold">📤</button>
+                            <button @click.stop="revertToDangLam(item)" class="btn btn-sm btn-warning">Hoàn lại</button>
+                          </div>
                         </div>
                         <div class="small text-muted">{{ item.phone }} | {{ item.model }} | {{ item.replacedPart || 'Chưa có' }}</div>
                       </div>
@@ -1110,13 +1298,14 @@ onMounted(async () => {
                       <button @click="changeStatus(2)" :class="['btn fw-bold flex-grow-1', selectedCustomer.status===2?'btn-success':'btn-outline-success']">✅ Xong</button>
                     </div>
                   </div>
-                  <div class="mt-3">
-                    <label class="form-label fw-bold">Linh kiện thay:</label>
-                    <div class="input-group mb-1">
-                      <input v-model="editingPart2" type="text" class="form-control" placeholder="Nhập linh kiện..." @keyup.enter="savePartInModal">
-                      <button @click="savePartInModal" class="btn btn-success fw-bold">Lưu</button>
+                  <div v-if="selectedCustomer.statusLog?.length" class="mt-2 mb-3">
+                    <label class="form-label fw-bold">📋 Lịch sử trạng thái:</label>
+                    <div class="status-log">
+                      <div v-for="(log, i) in selectedCustomer.statusLog" :key="i" class="status-log-item">
+                        <span :class="['log-badge', log.status===0?'log-blue':log.status===1?'log-yellow':'log-green']">{{ log.label }}</span>
+                        <span class="log-meta">{{ log.by }} · {{ log.at }}</span>
+                      </div>
                     </div>
-                    <small class="text-muted">Hiện tại: {{ selectedCustomer.replacedPart || 'Chưa có' }}</small>
                   </div>
                   <div class="mt-3">
                     <label class="form-label fw-bold">Link Drive:</label>
@@ -1129,6 +1318,27 @@ onMounted(async () => {
                       <button @click="startEditFolder(selectedCustomer.id, selectedCustomer.folderDrive)" class="btn btn-sm btn-light border fw-bold">✏️</button>
                     </div>
                   </div>
+                  <!-- GIÁ TIỀN -->
+                  <div class="mt-3 price-block">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                      <label class="form-label fw-bold mb-0">💰 Phí sửa chữa:</label>
+                      <button v-if="isAdmin" @click="openPriceEditor(selectedCustomer)" class="btn btn-sm btn-outline-success fw-bold">+ Linh kiện / Giá</button>
+                    </div>
+                    <div v-if="selectedCustomer.lkItems?.length" class="lk-price-list mb-2">
+                      <div v-for="(lk, i) in selectedCustomer.lkItems" :key="i" class="lk-price-row">
+                        <span>🔩 {{ lk.name }}</span>
+                        <span class="fw-bold text-success">{{ formatPrice(lk.price) }}</span>
+                      </div>
+                      <div class="lk-price-total">
+                        <span>Tổng linh kiện</span>
+                        <span>{{ formatPrice(totalLkPrice(selectedCustomer.lkItems)) }}</span>
+                      </div>
+                    </div>
+                    <div class="price-display">
+                      <span>Tổng phí:</span>
+                      <span class="price-value">{{ formatPrice(selectedCustomer.price) }}</span>
+                    </div>
+                  </div>
                 </div>
                 <div class="col-md-7">
                   <h6 class="mb-3">Ảnh &amp; Video</h6>
@@ -1136,7 +1346,7 @@ onMounted(async () => {
                   <div class="media-grid">
                     <div v-for="(m, idx) in selectedCustomer.media || []" :key="idx" class="media-item position-relative">
                       <img v-if="m.type!=='video'" :src="m.data" @click="openMediaModal(m)" alt="Ảnh" style="cursor:pointer;" loading="lazy">
-                      <video v-else :src="m.data" controls preload="metadata"></video>
+                      <video v-else :src="m.data" controls preload="metadata" @click="openMediaModal(m)" style="cursor:pointer;"></video>
                       <span @click.stop="removeMedia(selectedCustomer, idx)" class="media-del">×</span>
                     </div>
                     <label class="media-add">
@@ -1148,6 +1358,7 @@ onMounted(async () => {
               </div>
             </div>
             <div class="modal-footer">
+              <button @click="shareCustomer(selectedCustomer)" class="btn btn-info fw-bold text-white">📤 Chia sẻ</button>
               <button @click="openEditModal(selectedCustomer, 'asvn')" class="btn btn-warning fw-bold">✏️ Sửa ca</button>
               <button v-if="isAdmin" @click="deleteCustomer(selectedCustomer.id)" class="btn btn-danger">🗑️ Xóa ca</button>
               <button type="button" class="btn btn-secondary" @click="closeDetailModal">Đóng</button>
@@ -1188,13 +1399,14 @@ onMounted(async () => {
                       <button @click="changeOutsideStatus(2)" :class="['btn fw-bold flex-grow-1', selectedOutside.status===2?'btn-success':'btn-outline-success']">✅ Xong</button>
                     </div>
                   </div>
-                  <div class="mt-3">
-                    <label class="form-label fw-bold">Linh kiện thay:</label>
-                    <div class="input-group mb-1">
-                      <input v-model="editingOutsidePart" type="text" class="form-control" placeholder="Nhập linh kiện..." @keyup.enter="saveOutsidePart">
-                      <button @click="saveOutsidePart" class="btn btn-success fw-bold">Lưu</button>
+                  <div v-if="selectedOutside.statusLog?.length" class="mt-2 mb-3">
+                    <label class="form-label fw-bold">📋 Lịch sử trạng thái:</label>
+                    <div class="status-log">
+                      <div v-for="(log, i) in selectedOutside.statusLog" :key="i" class="status-log-item">
+                        <span :class="['log-badge', log.status===0?'log-blue':log.status===1?'log-yellow':'log-green']">{{ log.label }}</span>
+                        <span class="log-meta">{{ log.by }} · {{ log.at }}</span>
+                      </div>
                     </div>
-                    <small class="text-muted">Hiện tại: {{ selectedOutside.replacedPart || 'Chưa có' }}</small>
                   </div>
                   <div class="mt-3">
                     <label class="form-label fw-bold">Link Drive:</label>
@@ -1207,6 +1419,27 @@ onMounted(async () => {
                       <button @click="startEditFolder(selectedOutside.id, selectedOutside.folderDrive)" class="btn btn-sm btn-light border">✏️</button>
                     </div>
                   </div>
+                  <!-- GIÁ TIỀN Ca Ngoài -->
+                  <div class="mt-3 price-block">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                      <label class="form-label fw-bold mb-0">💰 Phí sửa chữa:</label>
+                      <button v-if="isAdmin" @click="openPriceEditor(selectedOutside)" class="btn btn-sm btn-outline-success fw-bold">+ Linh kiện / Giá</button>
+                    </div>
+                    <div v-if="selectedOutside.lkItems?.length" class="lk-price-list mb-2">
+                      <div v-for="(lk, i) in selectedOutside.lkItems" :key="i" class="lk-price-row">
+                        <span>🔩 {{ lk.name }}</span>
+                        <span class="fw-bold text-success">{{ formatPrice(lk.price) }}</span>
+                      </div>
+                      <div class="lk-price-total">
+                        <span>Tổng linh kiện</span>
+                        <span>{{ formatPrice(totalLkPrice(selectedOutside.lkItems)) }}</span>
+                      </div>
+                    </div>
+                    <div class="price-display">
+                      <span>Tổng phí:</span>
+                      <span class="price-value">{{ formatPrice(selectedOutside.price) }}</span>
+                    </div>
+                  </div>
                 </div>
                 <div class="col-md-7">
                   <h6 class="mb-3">Ảnh &amp; Video</h6>
@@ -1214,7 +1447,7 @@ onMounted(async () => {
                   <div class="media-grid">
                     <div v-for="(m, idx) in selectedOutside.media || []" :key="idx" class="media-item position-relative">
                       <img v-if="m.type!=='video'" :src="m.data" @click="openMediaModal(m)" alt="Ảnh" style="cursor:pointer;" loading="lazy">
-                      <video v-else :src="m.data" controls preload="metadata"></video>
+                      <video v-else :src="m.data" controls preload="metadata" @click="openMediaModal(m)" style="cursor:pointer;"></video>
                       <span @click.stop="removeMedia(selectedOutside, idx)" class="media-del">×</span>
                     </div>
                     <label class="media-add">
@@ -1226,6 +1459,7 @@ onMounted(async () => {
               </div>
             </div>
             <div class="modal-footer">
+              <button @click="shareCustomer(selectedOutside)" class="btn btn-info fw-bold text-white">📤 Chia sẻ</button>
               <button @click="openEditModal(selectedOutside, 'outside')" class="btn btn-warning fw-bold">✏️ Sửa ca</button>
               <button v-if="isAdmin" @click="deleteCustomer(selectedOutside.id)" class="btn btn-danger">🗑️ Xóa ca</button>
               <button type="button" class="btn btn-secondary" @click="closeOutsideDetailModal">Đóng</button>
@@ -1266,8 +1500,8 @@ onMounted(async () => {
       <div v-if="showModal" class="media-modal-overlay" @click="closeMediaModal">
         <div class="media-modal-content" @click.stop>
           <button class="modal-close" @click="closeMediaModal">×</button>
-          <img v-if="modalMedia?.type==='image'" :src="modalMedia.data" alt="Ảnh phóng to" class="modal-media">
-          <video v-else-if="modalMedia?.type==='video'" :src="modalMedia.data" controls autoplay class="modal-media"></video>
+          <img v-if="modalMedia?.type!=='video'" :src="modalMedia.data" alt="Ảnh phóng to" class="modal-media">
+          <video v-else :src="modalMedia.data" controls autoplay class="modal-media"></video>
         </div>
       </div>
 
@@ -1397,6 +1631,93 @@ onMounted(async () => {
 
     </div>
 
+      <!-- ══ MODAL LINH KIỆN + GIÁ (Admin) ══ -->
+      <div v-if="showLkForm" class="modal fade show" tabindex="-1" style="display:block;background:rgba(0,0,0,0.7);">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+          <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+              <h5 class="modal-title">💰 Linh kiện & Phí sửa chữa</h5>
+              <button type="button" class="btn-close btn-close-white" @click="showLkForm = false"></button>
+            </div>
+            <div class="modal-body">
+              <!-- Danh sách linh kiện -->
+              <div v-if="editingLkItems.length" class="mb-3">
+                <label class="form-label fw-bold">Linh kiện đã thêm:</label>
+                <div v-for="(lk, i) in editingLkItems" :key="i" class="lk-edit-row">
+                  <span class="flex-grow-1">🔩 {{ lk.name }}</span>
+                  <span class="fw-bold text-success me-2">{{ formatPrice(lk.price) }}</span>
+                  <button @click="removeLkItem(i)" class="btn btn-sm btn-danger">×</button>
+                </div>
+                <div class="lk-price-total mt-2">
+                  <span>Tổng linh kiện</span>
+                  <span class="fw-bold">{{ formatPrice(totalLkPrice(editingLkItems)) }}</span>
+                </div>
+              </div>
+              <!-- Thêm linh kiện mới -->
+              <div class="mb-3 p-3 bg-light rounded">
+                <label class="form-label fw-bold">+ Thêm linh kiện:</label>
+                <input v-model="newLkName" type="text" class="form-control mb-2" placeholder="Tên linh kiện... (VD: Board nguồn, Panel)">
+                <div class="input-group mb-2">
+                  <input v-model.number="newLkPrice" type="number" class="form-control" placeholder="Giá (đ)">
+                  <span class="input-group-text">đ</span>
+                </div>
+                <button @click="addLkItem" class="btn btn-success w-100 fw-bold">+ Thêm</button>
+              </div>
+              <!-- Giá tổng tùy chỉnh -->
+              <div class="mb-3">
+                <label class="form-label fw-bold">Tổng phí thu khách (để trống = tự tính):</label>
+                <div class="input-group">
+                  <input v-model.number="editingPrice" type="number" class="form-control" placeholder="0">
+                  <span class="input-group-text">đ</span>
+                </div>
+                <small class="text-muted">Tự tính: {{ formatPrice(totalLkPrice(editingLkItems)) }}</small>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button @click="showLkForm = false" class="btn btn-secondary">Hủy</button>
+              <button @click="savePriceAndLk(selectedCustomer || selectedOutside)" class="btn btn-success fw-bold">💾 Lưu</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ MODAL CA CHỜ LK TRỄ ══ -->
+      <div v-if="showChoLkTreModal" class="modal fade show" tabindex="-1" style="display:block;background:rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
+          <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+              <h5 class="modal-title">⏰ Ca chờ linh kiện trễ ({{ choLkTreList.length }} ca)</h5>
+              <button type="button" class="btn-close btn-close-white" @click="showChoLkTreModal = false"></button>
+            </div>
+            <div class="modal-body p-3">
+              <div v-if="!choLkTreList.length" class="text-center text-muted py-5">Không có ca nào trễ linh kiện</div>
+              <div v-else class="list-group">
+                <button v-for="item in choLkTreList" :key="item.id"
+                  class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3"
+                  @click="showChoLkTreModal = false; openDetailModalFull(item)">
+                  <div class="flex-grow-1">
+                    <div class="d-flex justify-content-between mb-1">
+                      <strong class="text-primary fs-6">{{ item.ticketId }}</strong>
+                      <span class="badge bg-danger">Trễ LK</span>
+                    </div>
+                    <div class="mb-1 fw-bold">{{ item.name }} — {{ item.phone }}</div>
+                    <div class="small text-muted mb-1">📺 {{ item.model }}</div>
+                    <div v-if="item.replacedPart && item.replacedPart !== 'Chưa có'" class="small text-warning fw-bold">🔩 Đang chờ: {{ item.replacedPart }}</div>
+                    <div v-if="item.statusLog?.length" class="small text-muted mt-1">
+                      Chuyển chờ LK: {{ [...item.statusLog].reverse().find(l=>l.status===1)?.at }}
+                      bởi {{ [...item.statusLog].reverse().find(l=>l.status===1)?.by }}
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button @click="showChoLkTreModal = false" class="btn btn-secondary">Đóng</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ══ MODAL SỬA CA ══ -->
       <div v-if="showEditModal && editingCa" class="modal fade show" tabindex="-1" style="display:block;background:rgba(0,0,0,0.7);">
         <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
@@ -1450,6 +1771,12 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* ── Chart overlay ───────────────────────────────────────── */
+.chart-overlay { position: fixed; inset: 0; background: #f1f5f9; z-index: 500; overflow-y: auto; }
+.chart-overlay-header { background: #1e293b; padding: 0.6rem 1rem; position: sticky; top: 0; z-index: 10; }
+.btn-back { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; padding: 0.35rem 1rem; font-weight: 600; cursor: pointer; font-size: 0.9rem; }
+.btn-back:hover { background: rgba(255,255,255,0.25); }
+
 /* ── Auth loading ─────────────────────────────────────────── */
 .auth-loading {
   min-height: 100vh; display: flex; flex-direction: column;
@@ -1582,9 +1909,47 @@ onMounted(async () => {
 @media (min-width: 1200px) {
   .case-strip { grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); }
 }
+/* ── Status Log ───────────────────────────────────────────── */
+.status-log { display: flex; flex-direction: column; gap: 0.4rem; }
+.status-log-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.82rem; }
+.log-badge { padding: 0.15rem 0.6rem; border-radius: 20px; font-weight: 700; font-size: 0.75rem; white-space: nowrap; }
+.log-blue   { background: #dbeafe; color: #1d4ed8; }
+.log-yellow { background: #fef3c7; color: #92400e; }
+.log-green  { background: #d1fae5; color: #065f46; }
+.log-meta   { color: #64748b; }
+
+/* ── Swipe card ───────────────────────────────────────────── */
+.swipe-card { position: relative; overflow: hidden; }
+.swipe-hint-right,
+.swipe-hint-left {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  background: rgba(0,0,0,0.55); color: #fff;
+  padding: 0.4rem 0.8rem; border-radius: 8px;
+  font-size: 0.85rem; font-weight: 700;
+  opacity: 0; pointer-events: none; z-index: 5;
+  transition: opacity 0.2s;
+}
+.swipe-hint-right { left: 12px; }
+.swipe-hint-left  { right: 12px; }
+.swipe-card:active .swipe-hint-right,
+.swipe-card:active .swipe-hint-left { opacity: 1; }
+
+/* ── Price block ──────────────────────────────────────────── */
+.price-block { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 0.75rem 1rem; }
+.lk-price-list { display: flex; flex-direction: column; gap: 0.3rem; }
+.lk-price-row { display: flex; justify-content: space-between; font-size: 0.85rem; padding: 0.2rem 0; border-bottom: 1px solid #dcfce7; }
+.lk-price-total { display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 700; color: #065f46; padding-top: 0.3rem; border-top: 2px solid #86efac; }
+.price-display { display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; }
+.price-value { font-size: 1.3rem; font-weight: 800; color: #16a34a; }
+.lk-edit-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid #e5e7eb; font-size: 0.9rem; }
+.stat-money  { background: #fef9c3; }
+.stat-money2 { background: #fef3c7; }
+.stat-money .stat-num  { color: #854d0e; }
+.stat-money2 .stat-num { color: #78350f; }
+
 /* ── Stats Panel ──────────────────────────────────────────── */
 .stats-wrap { max-width: 1450px; margin: 0 auto; background: #fff; border-bottom: 2px solid #e2e8f0; padding: 1rem 1.5rem; }
-.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 0.75rem; }
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem; }
 .stat-card { border-radius: 14px; padding: 1rem; text-align: center; }
 .stat-blue   { background: #dbeafe; }
 .stat-yellow { background: #fef3c7; }

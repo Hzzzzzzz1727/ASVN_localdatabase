@@ -14,7 +14,7 @@ export function useSupabaseCustomers() {
     return data.publicUrl
   }
 
-  // ── Load danh sách ca (không load media) ─────────────────
+  // ── Load danh sách ca (smart merge - không re-render toàn bộ) ─
   const loadData = async () => {
     isLoading.value = true
     const { data, error } = await supabase
@@ -22,15 +22,61 @@ export function useSupabaseCustomers() {
       .select(`
         id, ticketId, name, phone, model, address, issue,
         status, replacedPart, doneDate, createdAt,
-        folderDrive, warehouse, serial, branch
+        folderDrive, warehouse, serial, branch, statusLog, price, lkItems
       `)
       .order('id', { ascending: false })
       .limit(300)
     if (error) {
       console.error('[Customers] Load error:', error.message)
-    } else {
-      customers.value = data || []
+      isLoading.value = false
+      return
     }
+
+    const newData = data || []
+
+    // Lần đầu load: set thẳng
+    if (customers.value.length === 0) {
+      customers.value = newData
+      isLoading.value = false
+      return
+    }
+
+    // Smart merge: chỉ update/add/remove những record thay đổi
+    const newMap = new Map(newData.map(c => [c.id, c]))
+    const oldMap = new Map(customers.value.map(c => [c.id, c]))
+
+    // Xóa những record không còn tồn tại
+    const toRemove = customers.value.filter(c => !newMap.has(c.id))
+    if (toRemove.length) {
+      toRemove.forEach(c => {
+        const idx = customers.value.findIndex(x => x.id === c.id)
+        if (idx !== -1) customers.value.splice(idx, 1)
+      })
+    }
+
+    // Update hoặc thêm mới
+    newData.forEach(newItem => {
+      const idx = customers.value.findIndex(c => c.id === newItem.id)
+      if (idx === -1) {
+        // Record mới → thêm vào đầu
+        customers.value.unshift(newItem)
+      } else {
+        // Record cũ → chỉ update nếu có thay đổi thật sự
+        const old = customers.value[idx]
+        if (
+          old.status !== newItem.status ||
+          old.replacedPart !== newItem.replacedPart ||
+          old.doneDate !== newItem.doneDate ||
+          old.name !== newItem.name ||
+          old.price !== newItem.price ||
+          old.lkItems?.length !== newItem.lkItems?.length ||
+          old.statusLog?.length !== newItem.statusLog?.length
+        ) {
+          customers.value[idx] = { ...customers.value[idx], ...newItem }
+        }
+      }
+    })
+
     isLoading.value = false
   }
 
