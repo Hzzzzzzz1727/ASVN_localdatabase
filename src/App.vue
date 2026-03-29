@@ -1508,7 +1508,7 @@ onMounted(async () => {
                 <label class="form-label fw-bold mb-1">📋 Dán thông tin nhanh</label>
                 <div class="d-flex gap-2">
                   <textarea v-model="outsideRawInput" class="form-control" rows="2"
-                    placeholder='VD: "Anh Hải 0905244955 tivi LG 43UN7290 lỗi nhảy hình"'></textarea>
+                    placeholder='Dán nội dung"'></textarea>
                   <button @click="parseOutsideText" :disabled="!outsideRawInput.trim()"
                     class="btn btn-success fw-bold" style="white-space:nowrap;min-width:80px;">
                     🔍 Lọc
