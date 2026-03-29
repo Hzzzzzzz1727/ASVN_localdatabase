@@ -33,6 +33,15 @@ const searchQuery = ref('')
 const historySearchQuery = ref('')
 const { customers, loadData, loadMediaForItem, uploadMediaFiles, removeMediaItem, migrateBase64ToStorage } = useSupabaseCustomers()
 
+const ensureSession = async () => {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (session) return session
+
+  const { data, error } = await supabase.auth.refreshSession()
+  if (error) throw error
+  return data.session
+}
+
 // ── TOAST ─────────────────────────────────────────────────────
 const toasts = ref([])
 let toastId = 0
@@ -590,15 +599,20 @@ const changeStatus = async (status) => {
 }
 const changeOutsideStatus = async (status) => {
   if (!selectedOutside.value) return
-  await ensureSession()
-  const now = new Date()
-  const dateStr = `${now.getDate().toString().padStart(2,'0')}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getFullYear()}`
-  const newLog = appendStatusLog(selectedOutside.value.statusLog, status)
-  const updates = status === 2 ? { status, doneDate: dateStr, statusLog: newLog } : { status, doneDate: null, statusLog: newLog }
-  await supabase.from('customers').update(updates).eq('id', selectedOutside.value.id)
-  selectedOutside.value = { ...selectedOutside.value, ...updates }
-  updateLocalCustomer(selectedOutside.value.id, updates)
-  showToast('Đã cập nhật trạng thái!', 'success')
+  try {
+    await ensureSession()
+    const now = new Date()
+    const dateStr = `${now.getDate().toString().padStart(2,'0')}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getFullYear()}`
+    const newLog = appendStatusLog(selectedOutside.value.statusLog, status)
+    const updates = status === 2 ? { status, doneDate: dateStr, statusLog: newLog } : { status, doneDate: null, statusLog: newLog }
+    const { error } = await supabase.from('customers').update(updates).eq('id', selectedOutside.value.id)
+    if (error) throw error
+    selectedOutside.value = { ...selectedOutside.value, ...updates }
+    updateLocalCustomer(selectedOutside.value.id, updates)
+    showToast('Đã cập nhật trạng thái!', 'success')
+  } catch (e) {
+    showToast('Không thể đổi trạng thái ca ngoài: ' + (e?.message || 'Unknown error'), 'error')
+  }
 }
 const savePartInModal = async () => {
   if (!selectedCustomer.value) return
@@ -752,13 +766,18 @@ const setupSwipe = (el, item, isOutside = false) => {
       updateLocalCustomer(item.id, updates)
       showToast(`✅ Xong: ${item.ticketId}`, 'success')
     } else {
-      // Vuốt TRÁI → Chờ LK
-      if (item.status === 1) return
-      const newLog = appendStatusLog(item.statusLog, 1)
-      const updates = { status: 1, doneDate: null, statusLog: newLog }
+      // Vuốt TRÁI: Đang làm -> Chờ LK, Chờ LK -> Đang làm
+      const nextStatus = item.status === 1 ? 0 : 1
+      const newLog = appendStatusLog(item.statusLog, nextStatus)
+      const updates = nextStatus === 0
+        ? { status: 0, doneDate: null, statusLog: newLog }
+        : { status: 1, doneDate: null, statusLog: newLog }
       await supabase.from('customers').update(updates).eq('id', item.id)
       updateLocalCustomer(item.id, updates)
-      showToast(`⏳ Chờ LK: ${item.ticketId}`, 'warning')
+      showToast(
+        nextStatus === 0 ? `⚡ Đang làm: ${item.ticketId}` : `⏳ Chờ LK: ${item.ticketId}`,
+        nextStatus === 0 ? 'success' : 'warning'
+      )
     }
 
     // Visual feedback
@@ -1217,8 +1236,11 @@ onMounted(async () => {
             <div v-if="outsideDangLam.length">
               <h5 class="mb-3">Đang làm ({{ outsideDangLam.length }})</h5>
               <div class="case-strip">
-                <div v-for="item in outsideDangLam" :key="item.id" class="case-card"
+                <div v-for="item in outsideDangLam" :key="item.id" class="case-card swipe-card"
+                  :ref="el => el && setupSwipe(el, item, true)"
                   @click="openOutsideDetailModal(item)" style="cursor:pointer;">
+                  <div class="swipe-hint-right">✅ Xong</div>
+                  <div class="swipe-hint-left">⏳ Chờ LK</div>
                   <div class="card border-0 shadow-sm h-100">
                     <div class="card-body border-start border-5 border-primary">
                       <div class="d-flex justify-content-between align-items-start mb-2">
@@ -1241,8 +1263,11 @@ onMounted(async () => {
             <div v-if="outsideChoLinhKien.length">
               <h5 class="mb-3">Chờ linh kiện ({{ outsideChoLinhKien.length }})</h5>
               <div class="case-strip">
-                <div v-for="item in outsideChoLinhKien" :key="item.id" class="case-card"
+                <div v-for="item in outsideChoLinhKien" :key="item.id" class="case-card swipe-card"
+                  :ref="el => el && setupSwipe(el, item, true)"
                   @click="openOutsideDetailModal(item)" style="cursor:pointer;">
+                  <div class="swipe-hint-right">✅ Xong</div>
+                  <div class="swipe-hint-left">⚡ Đang làm</div>
                   <div class="card border-0 shadow-sm h-100">
                     <div class="card-body border-start border-5 border-warning">
                       <div class="d-flex justify-content-between align-items-start mb-2">
