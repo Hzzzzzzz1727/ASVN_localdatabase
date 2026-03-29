@@ -299,6 +299,7 @@ const removeLkItem = (idx) => editingLkItems.value.splice(idx, 1)
 
 const savePriceAndLk = async (customer) => {
   if (!customer) return
+  await ensureSession()
   const autoPrice = totalLkPrice(editingLkItems.value)
   const finalPrice = editingPrice.value || autoPrice
   // Tự tổng hợp tên linh kiện vào replacedPart để giữ tương thích Excel + hiển thị card
@@ -326,6 +327,49 @@ const showTreModal           = ref(false)
 const showChoLkTreModal      = ref(false)
 const showOutsideForm        = ref(false)
 const outsideForm            = ref({ name: '', phone: '', brand: '', model: '', issue: '' })
+const outsideRawInput        = ref('')
+
+const parseOutsideText = () => {
+  const text = outsideRawInput.value.trim()
+  if (!text) return
+
+  // Tìm SĐT
+  const phoneMatch = text.match(/(?:\+84|0)[3-9][0-9]{8}/)
+  const phone = phoneMatch ? phoneMatch[0].replace(/^\+84/, '0') : ''
+
+  // Tìm tên (Anh/Chị + tên, ở đầu chuỗi hoặc trước SĐT)
+  const nameMatch = text.match(/^((?:Anh|Chị|chị|Bác|bác|Ông|ông|Bà|bà|Chú|chú|Em|em|Cô|cô)\s+[^\d]+?)(?=\s*(?:\+84|0)[3-9])/)
+    || text.match(/((?:Anh|Chị|chị|Bác|bác|Ông|ông|Bà|bà|Chú|chú|Em|em|Cô|cô)\s+\S+)/)
+  const name = nameMatch ? nameMatch[1].trim() : ''
+
+  // Tìm hãng TV
+  const brandMatch = text.match(/\b(Samsung|LG|Sony|Panasonic|Sharp|Toshiba|TCL|Hisense|Xiaomi|Philips|Coocaa|Skyworth|Asanzo|Casper|Vsmart)\b/i)
+  const brand = brandMatch ? brandMatch[1] : ''
+
+  // Tìm model (chuỗi số-chữ trông giống model TV)
+  const textNoPhone = text.replace(phoneMatch?.[0] || '', '')
+  const modelMatch = textNoPhone.match(/\b([A-Z0-9]{3,}[A-Z0-9\-]*(?:[a-z]+)?[0-9]*)\b/i)
+  const model = modelMatch ? modelMatch[1] : ''
+
+  // Phần còn lại sau khi bỏ tên, SĐT, hãng, model → issue
+  let issue = text
+  if (name) issue = issue.replace(name, '')
+  if (phone) issue = issue.replace(phoneMatch[0], '')
+  if (brand) issue = issue.replace(new RegExp(brand, 'i'), '')
+  if (model) issue = issue.replace(model, '')
+  issue = issue.replace(/\b(tivi|tv|màn hình|máy)\b/gi, '').replace(/\s+/g, ' ').trim()
+  // Lấy phần lỗi sau từ "lỗi" nếu có
+  const loiMatch = outsideRawInput.value.match(/lỗi\s+(.+)/i)
+  if (loiMatch) issue = loiMatch[0].trim()
+
+  outsideForm.value = {
+    name: name || outsideForm.value.name,
+    phone: phone || outsideForm.value.phone,
+    brand: brand || outsideForm.value.brand,
+    model: model || outsideForm.value.model,
+    issue: issue || outsideForm.value.issue,
+  }
+}
 const showOutsideDetailModal = ref(false)
 const selectedOutside        = ref(null)
 const editingOutsidePart     = ref('')
@@ -473,8 +517,8 @@ const getWarehouseLabel     = (item) => item.warehouse === 'TDP' ? 'Kho TDP' : i
 const getWarehouseBadgeClass = (wh) => wh === 'TDP' ? 'bg-primary' : 'bg-success'
 
 // ── CA NGOÀI ──────────────────────────────────────────────────
-const openOutsideForm  = () => { showOutsideForm.value = true; outsideForm.value = { name: '', phone: '', brand: '', model: '', issue: '' } }
-const closeOutsideForm = () => showOutsideForm.value = false
+const openOutsideForm  = () => { showOutsideForm.value = true; outsideForm.value = { name: '', phone: '', brand: '', model: '', issue: '' }; outsideRawInput.value = '' }
+const closeOutsideForm = () => { showOutsideForm.value = false; outsideRawInput.value = '' }
 const saveOutsideCa = async () => {
   if (!outsideForm.value.phone || !outsideForm.value.issue) { showToast('Vui lòng nhập SĐT và tình trạng TV!', 'error'); return }
   const now = new Date()
@@ -496,12 +540,14 @@ const saveOutsideCa = async () => {
 // ── TRẠNG THÁI ────────────────────────────────────────────────
 const hoanTatKiemTra = async (item, event) => {
   if (!confirm(`Chuyển ca ${item.ticketId} sang "Chờ linh kiện"?`)) { event.target.checked = false; return }
+  await ensureSession()
   await supabase.from('customers').update({ status: 1 }).eq('id', item.id)
   updateLocalCustomer(item.id, { status: 1 })
   showToast('Đã chuyển sang chờ linh kiện!', 'success')
 }
 const dongCa = async (item) => {
   if (!confirm(`Chốt hoàn thành ca ${item.ticketId}?`)) return
+  await ensureSession()
   const now = new Date()
   const dateStr = `${now.getDate().toString().padStart(2,'0')}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getFullYear()}`
   await supabase.from('customers').update({ status: 2, doneDate: dateStr }).eq('id', item.id)
@@ -532,6 +578,7 @@ const appendStatusLog = (existingLog, status) => {
 
 const changeStatus = async (status) => {
   if (!selectedCustomer.value) return
+  await ensureSession()
   const now = new Date()
   const dateStr = `${now.getDate().toString().padStart(2,'0')}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getFullYear()}`
   const newLog = appendStatusLog(selectedCustomer.value.statusLog, status)
@@ -543,6 +590,7 @@ const changeStatus = async (status) => {
 }
 const changeOutsideStatus = async (status) => {
   if (!selectedOutside.value) return
+  await ensureSession()
   const now = new Date()
   const dateStr = `${now.getDate().toString().padStart(2,'0')}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getFullYear()}`
   const newLog = appendStatusLog(selectedOutside.value.statusLog, status)
@@ -554,6 +602,7 @@ const changeOutsideStatus = async (status) => {
 }
 const savePartInModal = async () => {
   if (!selectedCustomer.value) return
+  await ensureSession()
   await supabase.from('customers').update({ replacedPart: editingPart2.value }).eq('id', selectedCustomer.value.id)
   selectedCustomer.value.replacedPart = editingPart2.value
   updateLocalCustomer(selectedCustomer.value.id, { replacedPart: editingPart2.value })
@@ -740,101 +789,78 @@ onMounted(async () => {
     }
   })
 
-  // ── REALTIME ───────────────────────────────────────────────
+  // ── REALTIME với auto-reconnect ────────────────────────────
   let realtimeDebounce = null
   let realtimeChannel = null
-  let realtimeRetryTimer = null
 
   const setupRealtime = () => {
-    clearTimeout(realtimeRetryTimer)
     if (realtimeChannel) {
       try { supabase.removeChannel(realtimeChannel) } catch {}
       realtimeChannel = null
     }
     realtimeChannel = supabase
-      .channel('tvrepair-' + Date.now())
+      .channel('customers-realtime-' + Date.now())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => {
         clearTimeout(realtimeDebounce)
-        realtimeDebounce = setTimeout(async () => {
-          // Không reload nếu đang parse ca mới (tránh conflict)
-          if (isParsing.value) return
-          await loadData()
-        }, 3000)
+        realtimeDebounce = setTimeout(() => {
+          mediaCache.clear()
+          loadData()
+        }, 1500)
       })
       .subscribe((status) => {
         if (status === 'CHANNEL_ERROR' || status === 'CLOSED') {
-          realtimeRetryTimer = setTimeout(setupRealtime, 8000)
+          setTimeout(setupRealtime, 5000)
         }
       })
   }
   setupRealtime()
 
-  // ── Keepalive 3 phút: giữ session + kiểm tra realtime ─────
+  // ── Keepalive: 2 phút ping 1 lần ─────────────────────────
   setInterval(async () => {
-    if (!isLoggedIn.value) return
     try { await supabase.auth.getSession() } catch {}
-    const state = realtimeChannel?.state
-    if (!realtimeChannel || (state !== 'joined' && state !== 'joining')) {
-      setupRealtime()
-    }
-  }, 3 * 60 * 1000)
+    if (!realtimeChannel) { setupRealtime(); return }
+    if (realtimeChannel.state !== 'joined') setupRealtime()
+  }, 2 * 60 * 1000)
 
-  // ── Visibility change: phục hồi khi tab quay lại ──────────
-  let hiddenAt = 0
-  let recoveryTimer = null
+  // ── Visibility change ─────────────────────────────────────
+  let lastActiveTime = Date.now()
+  let isRecovering = false
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible') {
+      if (isRecovering) return
+      const awayMs = Date.now() - lastActiveTime
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-      hiddenAt = Date.now()
-      return
-    }
-
-    // Tab visible trở lại
-    clearTimeout(recoveryTimer)
-    const awayMs = Date.now() - hiddenAt
-
-    // Ẩn < 2 phút: không làm gì cả
-    if (awayMs < 2 * 60_000) return
-
-    // Ẩn 2–10 phút: chỉ reconnect realtime nếu cần, không reload data
-    if (awayMs < 10 * 60_000) {
-      if (realtimeChannel?.state !== 'joined') setupRealtime()
-      return
-    }
-
-    // Ẩn > 10 phút: refresh session + reload đầy đủ
-    // Dùng timer để không block event handler
-    recoveryTimer = setTimeout(async () => {
-      if (!isLoggedIn.value) return
+      // Luôn refresh session khi quay lại tab (dù chỉ 5s)
+      // để đảm bảo write ops hoạt động bình thường
+      isRecovering = true
       try {
-        const { error } = await supabase.auth.refreshSession()
-        if (error) { await logout(); return }
-        mediaCache.clear()
-        await loadData()
-        setupRealtime()
-        showToast('Đã đồng bộ lại dữ liệu', 'success', 2000)
-      } catch {}
-    }, 300)
+        await supabase.auth.refreshSession()
+        if (awayMs > 30 * 1000) {
+          await loadData()
+        }
+      } catch (e) {
+        console.warn('Recovery:', e?.message)
+      } finally {
+        isRecovering = false
+      }
+    } else {
+      lastActiveTime = Date.now()
+    }
   })
 
   const channel = new BroadcastChannel('zalo_bridge')
   channel.onmessage = (event) => { if (event.data) customHandleParse(event.data) }
 
-  // Clipboard: debounce 500ms + guard isParsing
+  // Clipboard: chỉ parse nếu text mới
   let lastClipboardText = ''
-  let clipboardDebounce = null
-  window.addEventListener('focus', () => {
-    clearTimeout(clipboardDebounce)
-    clipboardDebounce = setTimeout(async () => {
-      if (isParsing.value) return
-      try {
-        const text = await navigator.clipboard.readText()
-        if (text && text !== lastClipboardText && (text.includes('ASVN') || text.includes('CSVN'))) {
-          lastClipboardText = text
-          customHandleParse(text)
-        }
-      } catch {}
-    }, 500)
+  window.addEventListener('focus', async () => {
+    try {
+      const text = await navigator.clipboard.readText()
+      if (text && text !== lastClipboardText && (text.includes('ASVN') || text.includes('CSVN'))) {
+        lastClipboardText = text
+        customHandleParse(text)
+      }
+    } catch {}
   })
 })
 </script>
@@ -1477,6 +1503,20 @@ onMounted(async () => {
               <button type="button" class="btn-close btn-close-white" @click="closeOutsideForm"></button>
             </div>
             <div class="modal-body">
+              <!-- Ô dán nhanh -->
+              <div class="mb-3 p-3 rounded" style="background:#f0fdf4;border:1px solid #bbf7d0;">
+                <label class="form-label fw-bold mb-1">📋 Dán thông tin nhanh</label>
+                <div class="d-flex gap-2">
+                  <textarea v-model="outsideRawInput" class="form-control" rows="2"
+                    placeholder='VD: "Anh Hải 0905244955 tivi LG 43UN7290 lỗi nhảy hình"'></textarea>
+                  <button @click="parseOutsideText" :disabled="!outsideRawInput.trim()"
+                    class="btn btn-success fw-bold" style="white-space:nowrap;min-width:80px;">
+                    🔍 Lọc
+                  </button>
+                </div>
+                <small class="text-muted mt-1 d-block">Dán xong bấm Lọc → tự điền vào form bên dưới</small>
+              </div>
+              <!-- Form nhập thủ công -->
               <div class="mb-3"><label class="form-label fw-bold">Tên khách hàng</label>
                 <input v-model="outsideForm.name" type="text" class="form-control" placeholder="VD: Anh Hòa, Chị Mai..."></div>
               <div class="mb-3"><label class="form-label fw-bold">SĐT <span class="text-danger">*</span></label>
@@ -1486,7 +1526,7 @@ onMounted(async () => {
               <div class="mb-3"><label class="form-label fw-bold">Model TV</label>
                 <input v-model="outsideForm.model" type="text" class="form-control" placeholder="VD: TV A2 2025"></div>
               <div class="mb-3"><label class="form-label fw-bold">Tình trạng <span class="text-danger">*</span></label>
-                <textarea v-model="outsideForm.issue" class="form-control" rows="4" placeholder="VD: Màn hình đen..."></textarea></div>
+                <textarea v-model="outsideForm.issue" class="form-control" rows="3" placeholder="VD: Màn hình đen..."></textarea></div>
             </div>
             <div class="modal-footer">
               <button type="button" class="btn btn-secondary" @click="closeOutsideForm">Đóng</button>

@@ -9,6 +9,7 @@ const currentUser    = ref(null)
 const currentProfile = ref(null)
 const isAuthLoading  = ref(true)
 const lockMessage    = ref('')
+const isBypassingAuthChange = ref(false) // Cờ để chặn onAuthStateChange khi tạo user
 
 export const useAuth = () => {
 
@@ -38,18 +39,26 @@ export const useAuth = () => {
   // ── INIT (gọi 1 lần trong App.vue onMounted) ─────────────────
   const initAuth = async () => {
     isAuthLoading.value = true
-    const { data: { session } } = await supabase.auth.getSession()
-    currentUser.value = session?.user ?? null
-    if (currentUser.value) await loadProfile(currentUser.value.id)
-
-    supabase.auth.onAuthStateChange(async (_event, session) => {
-      // Nếu đang bị khóa → không xử lý state change (login() tự throw)
-      if (lockMessage.value) return
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
       currentUser.value = session?.user ?? null
       if (currentUser.value) await loadProfile(currentUser.value.id)
-      else currentProfile.value = null
-    })
-    isAuthLoading.value = false
+
+      supabase.auth.onAuthStateChange(async (_event, session) => {
+        if (isBypassingAuthChange.value) return // Bỏ qua nếu đang trong quá trình tạo user
+        if (lockMessage.value) return
+        currentUser.value = session?.user ?? null
+        if (currentUser.value) {
+          try { await loadProfile(currentUser.value.id) } catch {}
+        } else {
+          currentProfile.value = null
+        }
+      })
+    } catch (e) {
+      console.warn('[initAuth]', e?.message)
+    } finally {
+      isAuthLoading.value = false
+    }
   }
 
   // ── LOGIN ────────────────────────────────────────────────────
@@ -91,33 +100,58 @@ export const useAuth = () => {
   }
 
   // ── ADMIN: Tạo tài khoản nhân viên ──────────────────────────
-  // Dùng signUp thông thường — admin tạo user, user tự xác nhận email
   const createNhanVien = async ({ email, password, fullName, warehouse }) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName, role: 'nhanvien' }
-      }
-    })
-    if (error) throw error
+    // Bật cờ để chặn onAuthStateChange (tránh mất quyền admin tạm thời)
+    isBypassingAuthChange.value = true
+    try {
+      // Lưu session admin hiện tại
+      const { data: { session: adminSession } } = await supabase.auth.getSession()
 
-    // Chờ profile được tạo bởi trigger
-    await new Promise(r => setTimeout(r, 800))
-
-    // Cập nhật profile
-    await supabase
-      .from('profiles')
-      .upsert({
-        id: data.user.id,
+      const { data, error } = await supabase.auth.signUp({
         email,
-        full_name: fullName,
-        role: 'nhanvien',
-        warehouse: warehouse || null,
-        is_active: true
+        password,
+        options: {
+          data: { full_name: fullName, role: 'nhanvien' }
+        }
       })
+      if (error) throw error
 
-    return data.user
+      // Chờ profile được tạo bởi trigger
+      await new Promise(r => setTimeout(r, 1000))
+
+      // Cập nhật profile nhân viên
+      await supabase
+        .from('profiles')
+        .upsert({
+          id: data.user.id,
+          email,
+          full_name: fullName,
+          role: 'nhanvien',
+          warehouse: warehouse || null,
+          is_active: true
+        })
+
+      // Restore lại session admin (signUp tự login vào account mới)
+      if (adminSession) {
+        await supabase.auth.setSession({
+          access_token: adminSession.access_token,
+          refresh_token: adminSession.refresh_token
+        })
+        // Reload lại profile admin để chắc chắn
+        currentUser.value = adminSession.user
+        // await loadProfile(adminSession.user.id) // Không cần load lại nếu user object ok
+      }
+
+      return data.user
+    } finally {
+      // Tắt cờ bypass
+      isBypassingAuthChange.value = false
+      // Double check session
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        currentUser.value = session.user
+      }
+    }
   }
 
   // ── ADMIN: Danh sách tất cả users ───────────────────────────
