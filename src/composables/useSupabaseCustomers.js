@@ -23,7 +23,8 @@ export function useSupabaseCustomers() {
         .select(`
           id, ticketId, name, phone, model, address, issue,
           status, replacedPart, doneDate, createdAt,
-          folderDrive, warehouse, serial, branch, statusLog, price, lkItems
+          folderDrive, warehouse, serial, branch, statusLog, price, lkItems,
+          warranty_months, warranty_start_at, warranty_expires_at
         `)
         .order('id', { ascending: false })
         .limit(300)
@@ -62,7 +63,10 @@ export function useSupabaseCustomers() {
             old.name !== newItem.name ||
             old.price !== newItem.price ||
             old.lkItems?.length !== newItem.lkItems?.length ||
-            old.statusLog?.length !== newItem.statusLog?.length
+            old.statusLog?.length !== newItem.statusLog?.length ||
+            old.warranty_months !== newItem.warranty_months ||
+            old.warranty_start_at !== newItem.warranty_start_at ||
+            old.warranty_expires_at !== newItem.warranty_expires_at
           ) {
             customers.value[idx] = { ...customers.value[idx], ...newItem }
           }

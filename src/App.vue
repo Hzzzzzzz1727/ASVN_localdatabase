@@ -41,6 +41,11 @@ const ensureSession = async () => {
   if (error) throw error
   return data.session
 }
+const withTimeout = (promise, ms = 5000) =>
+  Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
+  ])
 
 // ── TOAST ─────────────────────────────────────────────────────
 const toasts = ref([])
@@ -115,7 +120,7 @@ const customHandleParse = async (text) => {
       }
       const { error: errTDP } = await supabase.from('customers').insert([newCaTDP])
       if (errTDP) showToast('Lỗi lưu ca TDP: ' + errTDP.message, 'error')
-      else { showToast(`✅ Đã lưu TDP: ${ticketIdTDP} - ${nameTDP}`, 'success'); await loadData() }
+      else { showToast(`Đã lưu TDP: ${ticketIdTDP} - ${nameTDP}`, 'success'); await loadData() }
       rawInput.value = ''
       return
     }
@@ -158,7 +163,7 @@ const customHandleParse = async (text) => {
       }
       const { error: errPSC } = await supabase.from('customers').insert([newCaPSC])
       if (errPSC) showToast('Lỗi lưu ca: ' + errPSC.message, 'error')
-      else { showToast(`✅ Đã lưu ${warehousePSC}: ${ticketPSC} - ${namePSC}`, 'success'); await loadData() }
+      else { showToast(`Đã lưu ${warehousePSC}: ${ticketPSC} - ${namePSC}`, 'success'); await loadData() }
       rawInput.value = ''
       return
     }
@@ -219,7 +224,7 @@ const customHandleParse = async (text) => {
     }
     const { error } = await supabase.from('customers').insert([newCa])
     if (error) showToast('Lỗi lưu ca NV: ' + error.message, 'error')
-    else { showToast(`✅ Đã lưu: ${fullTicketId} - ${name}`, 'success'); await loadData() }
+    else { showToast(`Đã lưu: ${fullTicketId} - ${name}`, 'success'); await loadData() }
     rawInput.value = ''
   }
   try { await _run() } finally { isParsing.value = false }
@@ -241,6 +246,12 @@ const isEditingLink    = ref({})
 const tempFolderLink   = ref({})
 const showTab          = ref('danglam')
 const outsideTab       = ref('danglam')
+const showFilters      = ref(false)
+const showQuickCreateModal = ref(false)
+const detailModalTab   = ref('info')
+const outsideModalTab  = ref('info')
+const detailStatusDraft = ref(0)
+const outsideStatusDraft = ref(0)
 
 // ── EDIT CA ───────────────────────────────────────────────────
 const showEditModal   = ref(false)
@@ -276,7 +287,7 @@ const saveEditCa = async () => {
     selectedCustomer.value = { ...selectedCustomer.value, ...fields }
   if (showOutsideDetailModal.value && selectedOutside.value?.id === id)
     selectedOutside.value = { ...selectedOutside.value, ...fields }
-  showToast('✅ Đã cập nhật ca!', 'success')
+  showToast('Đã cập nhật ca!', 'success')
   closeEditModal()
 }
 
@@ -323,7 +334,7 @@ const savePriceAndLk = async (customer) => {
   if (selectedOutside.value?.id === customer.id)
     selectedOutside.value = { ...selectedOutside.value, ...updates }
   showLkForm.value = false
-  showToast('✅ Đã lưu giá tiền!', 'success')
+  showToast('Đã lưu giá tiền!', 'success')
 }
 
 // ── MODALS ────────────────────────────────────────────────────
@@ -382,9 +393,14 @@ const parseOutsideText = () => {
 const showOutsideDetailModal = ref(false)
 const selectedOutside        = ref(null)
 const editingOutsidePart     = ref('')
+const showWarrantyOptions    = ref(false)
+const showCustomWarrantyInput = ref(false)
+const customWarrantyMonths   = ref('')
 
 // ── MODAL HANDLERS ────────────────────────────────────────────
 const openDetailModalFull = (customer) => {
+  detailModalTab.value = 'info'
+  detailStatusDraft.value = customer.status ?? 0
   selectedCustomer.value = { ...customer, media: [] }
   editingPart2.value = customer.replacedPart || ''
   showDetailModal.value = true
@@ -408,6 +424,11 @@ const closeDetailModal = () => {
 }
 
 const openOutsideDetailModal = (item) => {
+  outsideModalTab.value = 'info'
+  outsideStatusDraft.value = item.status ?? 0
+  showWarrantyOptions.value = false
+  showCustomWarrantyInput.value = false
+  customWarrantyMonths.value = ''
   selectedOutside.value = { ...item, media: [] }
   editingOutsidePart.value = item.replacedPart || ''
   showOutsideDetailModal.value = true
@@ -425,11 +446,20 @@ const openOutsideDetailModal = (item) => {
   })
 }
 const closeOutsideDetailModal = () => {
+  showWarrantyOptions.value = false
+  showCustomWarrantyInput.value = false
+  customWarrantyMonths.value = ''
   showOutsideDetailModal.value = false; selectedOutside.value = null; document.body.style.overflow = ''
 }
 
 const openTreModal    = () => showTreModal.value = true
 const closeTreModal   = () => showTreModal.value = false
+const openQuickCreateModal = () => { showQuickCreateModal.value = true }
+const closeQuickCreateModal = () => { showQuickCreateModal.value = false }
+const openCreateCaseModal = () => {
+  if (currentType.value === 'OUTSIDE') openOutsideForm()
+  else openQuickCreateModal()
+}
 const openMediaModal  = (media) => { modalMedia.value = media; showModal.value = true; document.body.style.overflow = 'hidden' }
 const closeMediaModal = () => { showModal.value = false; modalMedia.value = null; document.body.style.overflow = '' }
 
@@ -538,7 +568,8 @@ const saveOutsideCa = async () => {
     model: `${outsideForm.value.brand} ${outsideForm.value.model}`.trim() || 'Chưa rõ',
     address: 'Ca ngoài - không có địa chỉ', issue: outsideForm.value.issue,
     media: [], folderDrive: '', status: 0, replacedPart: 'Chưa có linh kiện thay',
-    doneDate: null, createdAt: now.toISOString(), warehouse: 'TDP'
+    doneDate: null, createdAt: now.toISOString(), warehouse: 'TDP',
+    warranty_months: null, warranty_start_at: null, warranty_expires_at: null
   }
   const { error } = await supabase.from('customers').insert([newCa])
   if (error) { showToast('Lỗi lưu ca ngoài: ' + error.message, 'error'); return }
@@ -594,6 +625,7 @@ const changeStatus = async (status) => {
   const updates = status === 2 ? { status, doneDate: dateStr, statusLog: newLog } : { status, doneDate: null, statusLog: newLog }
   await supabase.from('customers').update(updates).eq('id', selectedCustomer.value.id)
   selectedCustomer.value = { ...selectedCustomer.value, ...updates }
+  detailStatusDraft.value = status
   updateLocalCustomer(selectedCustomer.value.id, updates)
   showToast('Đã cập nhật trạng thái!', 'success')
 }
@@ -608,11 +640,18 @@ const changeOutsideStatus = async (status) => {
     const { error } = await supabase.from('customers').update(updates).eq('id', selectedOutside.value.id)
     if (error) throw error
     selectedOutside.value = { ...selectedOutside.value, ...updates }
+    outsideStatusDraft.value = status
     updateLocalCustomer(selectedOutside.value.id, updates)
     showToast('Đã cập nhật trạng thái!', 'success')
   } catch (e) {
     showToast('Không thể đổi trạng thái ca ngoài: ' + (e?.message || 'Unknown error'), 'error')
   }
+}
+const applyDetailStatus = async () => {
+  await changeStatus(Number(detailStatusDraft.value))
+}
+const applyOutsideStatus = async () => {
+  await changeOutsideStatus(Number(outsideStatusDraft.value))
 }
 const savePartInModal = async () => {
   if (!selectedCustomer.value) return
@@ -715,6 +754,98 @@ const formatDate  = (dateStr) => {
   return isNaN(d.getTime()) ? 'Ngày không hợp lệ'
     : d.toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
+const formatDateOnly = (date) => {
+  const d = date instanceof Date ? date : new Date(date)
+  if (isNaN(d.getTime())) return 'N/A'
+  return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+const addMonths = (date, months) => {
+  const result = new Date(date)
+  const originalDay = result.getDate()
+  result.setMonth(result.getMonth() + months)
+  if (result.getDate() !== originalDay) result.setDate(0)
+  return result
+}
+const getStatusHistory = (logs) => Array.isArray(logs) ? logs.filter(log => typeof log?.status === 'number') : []
+const getWarrantyLog = (item) => {
+  if (!Array.isArray(item?.statusLog)) return null
+  return [...item.statusLog].reverse().find(log => log?.type === 'warranty') || null
+}
+const getWarrantyInfo = (item) => {
+  if (item?.status !== 2) return null
+
+  let months = item?.warranty_months
+  let startRaw = item?.warranty_start_at
+  let expiresRaw = item?.warranty_expires_at
+
+  if ((!months || !startRaw || !expiresRaw) && getWarrantyLog(item)) {
+    const warrantyLog = getWarrantyLog(item)
+    months = months || warrantyLog?.warrantyMonths
+    startRaw = startRaw || warrantyLog?.startAt
+    expiresRaw = expiresRaw || warrantyLog?.expiresAt
+  }
+
+  if (!months || !startRaw || !expiresRaw) return null
+
+  const startDate = new Date(startRaw)
+  const expiresAt = new Date(expiresRaw)
+  if (isNaN(startDate.getTime()) || isNaN(expiresAt.getTime())) return null
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  expiresAt.setHours(23, 59, 59, 999)
+  const diffMs = expiresAt.getTime() - today.getTime()
+  const daysLeft = Math.ceil(diffMs / 86400000)
+  const expired = diffMs < 0
+
+  return {
+    label: `Bảo hành ${months} tháng`,
+    months,
+    startText: formatDateOnly(startDate),
+    expiresText: formatDateOnly(expiresAt),
+    remainingText: expired ? 'Hết bảo hành' : `Còn ${daysLeft} ngày`,
+    expired,
+  }
+}
+const saveOutsideWarranty = async (months) => {
+  if (!selectedOutside.value) return
+  if (!isAdmin.value) {
+    showToast('Chỉ admin mới được chỉnh thời gian bảo hành!', 'error')
+    return
+  }
+  if (selectedOutside.value.status !== 2) {
+    showToast('Chỉ nhập bảo hành khi ca ngoài đã hoàn thành!', 'warning')
+    return
+  }
+  const warrantyMonths = Number(months)
+  if (!Number.isFinite(warrantyMonths) || warrantyMonths <= 0) {
+    showToast('Thời gian bảo hành không hợp lệ!', 'error')
+    return
+  }
+  try {
+    await ensureSession()
+    const now = new Date()
+    const expiresAt = addMonths(now, warrantyMonths)
+    const updates = {
+      warranty_months: warrantyMonths,
+      warranty_start_at: now.toISOString(),
+      warranty_expires_at: expiresAt.toISOString(),
+    }
+    const { error } = await supabase.from('customers').update(updates).eq('id', selectedOutside.value.id)
+    if (error) throw error
+    selectedOutside.value = { ...selectedOutside.value, ...updates }
+    updateLocalCustomer(selectedOutside.value.id, updates)
+    showWarrantyOptions.value = false
+    showCustomWarrantyInput.value = false
+    customWarrantyMonths.value = ''
+    showToast('Đã lưu thời gian bảo hành!', 'success')
+  } catch (e) {
+    showToast('Không lưu được bảo hành: ' + (e?.message || 'Unknown error'), 'error')
+  }
+}
+const saveCustomOutsideWarranty = async () => {
+  await saveOutsideWarranty(customWarrantyMonths.value)
+}
 
 // ── EXPORT (chỉ admin) ────────────────────────────────────────
 const exportToExcel = (data, fileName) => {
@@ -764,7 +895,7 @@ const setupSwipe = (el, item, isOutside = false) => {
       const updates = { status: 2, doneDate: dateStr, statusLog: newLog }
       await supabase.from('customers').update(updates).eq('id', item.id)
       updateLocalCustomer(item.id, updates)
-      showToast(`✅ Xong: ${item.ticketId}`, 'success')
+      showToast(`Xong: ${item.ticketId}`, 'success')
     } else {
       // Vuốt TRÁI: Đang làm -> Chờ LK, Chờ LK -> Đang làm
       const nextStatus = item.status === 1 ? 0 : 1
@@ -775,7 +906,7 @@ const setupSwipe = (el, item, isOutside = false) => {
       await supabase.from('customers').update(updates).eq('id', item.id)
       updateLocalCustomer(item.id, updates)
       showToast(
-        nextStatus === 0 ? `⚡ Đang làm: ${item.ticketId}` : `⏳ Chờ LK: ${item.ticketId}`,
+        nextStatus === 0 ? `Đang làm: ${item.ticketId}` : `Chờ LK: ${item.ticketId}`,
         nextStatus === 0 ? 'success' : 'warning'
       )
     }
@@ -844,24 +975,26 @@ onMounted(async () => {
   // ── Visibility change ─────────────────────────────────────
   let lastActiveTime = Date.now()
   let isRecovering = false
-  document.addEventListener('visibilitychange', async () => {
-    if (document.visibilityState === 'visible') {
-      if (isRecovering) return
-      const awayMs = Date.now() - lastActiveTime
-
-      // Luôn refresh session khi quay lại tab (dù chỉ 5s)
-      // để đảm bảo write ops hoạt động bình thường
-      isRecovering = true
-      try {
-        await supabase.auth.refreshSession()
-        if (awayMs > 30 * 1000) {
-          await loadData()
-        }
-      } catch (e) {
-        console.warn('Recovery:', e?.message)
-      } finally {
-        isRecovering = false
+  let lastFocusClipboardCheck = 0
+  const recoverAppState = async () => {
+    if (!isLoggedIn.value || isRecovering || !isOnline.value) return
+    const awayMs = Date.now() - lastActiveTime
+    isRecovering = true
+    try {
+      await withTimeout(supabase.auth.getSession(), 2500)
+      if (awayMs > 60 * 1000) {
+        mediaCache.clear()
+        await withTimeout(loadData(), 6000)
       }
+    } catch (e) {
+      console.warn('Recovery:', e?.message)
+    } finally {
+      isRecovering = false
+    }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      setTimeout(() => { recoverAppState() }, 150)
     } else {
       lastActiveTime = Date.now()
     }
@@ -872,14 +1005,22 @@ onMounted(async () => {
 
   // Clipboard: chỉ parse nếu text mới
   let lastClipboardText = ''
-  window.addEventListener('focus', async () => {
-    try {
-      const text = await navigator.clipboard.readText()
-      if (text && text !== lastClipboardText && (text.includes('ASVN') || text.includes('CSVN'))) {
-        lastClipboardText = text
-        customHandleParse(text)
-      }
-    } catch {}
+  window.addEventListener('focus', () => {
+    const now = Date.now()
+    if (now - lastFocusClipboardCheck < 2000) return
+    lastFocusClipboardCheck = now
+    setTimeout(async () => {
+      if (!isLoggedIn.value || !isOnline.value) return
+      if (showDetailModal.value || showOutsideDetailModal.value || showModal.value || showEditModal.value) return
+      if (currentType.value === 'OUTSIDE') return
+      try {
+        const text = await withTimeout(navigator.clipboard.readText(), 1200)
+        if (text && text !== lastClipboardText && (text.includes('ASVN') || text.includes('CSVN'))) {
+          lastClipboardText = text
+          customHandleParse(text)
+        }
+      } catch {}
+    }, 200)
   })
 })
 </script>
@@ -919,26 +1060,34 @@ onMounted(async () => {
     <!-- TOP BAR -->
     <div v-show="!showChart" class="topbar">
       <div class="topbar-left">
-        <span class="topbar-logo">📺</span>
+        <span class="topbar-logo">TV</span>
         <span class="topbar-appname">TV Repair</span>
         <span :class="['role-chip', isAdmin ? 'role-admin' : 'role-nv']">
-          {{ isAdmin ? '👑 Admin' : '👷 Nhân viên' }}
+          {{ isAdmin ? 'Admin' : 'Nhân viên' }}
         </span>
-        <span v-if="!isOnline" class="offline-chip">📵 Offline</span>
+        <span v-if="!isOnline" class="offline-chip">Offline</span>
       </div>
       <div class="topbar-right">
         <span class="topbar-user">{{ userName }}</span>
+        <button @click="openTreModal" class="btn-topbar btn-topbar--alert">
+          <span class="btn-text">Ca trễ</span>
+          <span v-if="treCaList.length" class="topbar-badge">{{ treCaList.length }}</span>
+        </button>
+        <button @click="showChoLkTreModal = true" class="btn-topbar btn-topbar--alert">
+          <span class="btn-text">Trễ LK</span>
+          <span v-if="choLkTreList.length" class="topbar-badge">{{ choLkTreList.length }}</span>
+        </button>
         <button v-if="isAdmin"
           @click="showChart = true"
           class="btn-topbar">
-          📈 <span class="btn-text">Biểu đồ</span>
+          <span class="btn-text">Biểu đồ</span>
         </button>
         <button v-if="isAdmin"
           @click="showAdminPanel = !showAdminPanel"
           :class="['btn-topbar', showAdminPanel ? 'btn-topbar--active' : '']">
-          👥 <span class="btn-text">Quản lý TK</span>
+          <span class="btn-text">Quản lý TK</span>
         </button>
-        <button @click="logout" class="btn-topbar btn-topbar--logout">🚪 <span class="btn-text">Thoát</span></button>
+        <button @click="logout" class="btn-topbar btn-topbar--logout"><span class="btn-text">Thoát</span></button>
       </div>
     </div>
 
@@ -947,40 +1096,40 @@ onMounted(async () => {
       <div class="stats-grid">
         <div class="stat-card stat-blue">
           <div class="stat-num">{{ stats.dangLamAll }}</div>
-          <div class="stat-label">⚡ Đang làm</div>
+          <div class="stat-label">Đang làm</div>
         </div>
         <div class="stat-card stat-yellow">
           <div class="stat-num">{{ stats.choLKAll }}</div>
-          <div class="stat-label">⏳ Chờ linh kiện</div>
+          <div class="stat-label">Chờ linh kiện</div>
         </div>
         <div class="stat-card stat-green">
           <div class="stat-num">{{ stats.tongTat }}</div>
-          <div class="stat-label">✅ Tổng hoàn thành</div>
+          <div class="stat-label">Tổng hoàn thành</div>
         </div>
         <div class="stat-card stat-teal">
           <div class="stat-num">{{ stats.hoanThanhHomNay }}</div>
-          <div class="stat-label">🗓️ Xong hôm nay</div>
+          <div class="stat-label">Xong hôm nay</div>
         </div>
         <div class="stat-card stat-money">
           <div class="stat-num" style="font-size:1.3rem;">{{ formatPrice(stats.doanhThuHomNay) }}</div>
-          <div class="stat-label">💰 Doanh thu hôm nay</div>
+          <div class="stat-label">Doanh thu hôm nay</div>
         </div>
         <div class="stat-card stat-money2">
           <div class="stat-num" style="font-size:1.3rem;">{{ formatPrice(stats.doanhThuThang) }}</div>
-          <div class="stat-label">📈 Doanh thu tháng này</div>
+          <div class="stat-label">Doanh thu tháng này</div>
         </div>
       </div>
       <div class="stats-row2">
         <div class="stat-wh">
-          <div class="stat-wh-title">🏭 Kho TDP</div>
+          <div class="stat-wh-title">Kho TDP</div>
           <div class="stat-wh-row"><span class="s-blue">{{ stats.tdpDangLam }} đang làm</span> · <span class="s-yellow">{{ stats.tdpChoLK }} chờ LK</span> · <span class="s-green">{{ stats.tdpXong }} xong</span></div>
         </div>
         <div class="stat-wh">
-          <div class="stat-wh-title">🏭 Kho NV</div>
+          <div class="stat-wh-title">Kho NV</div>
           <div class="stat-wh-row"><span class="s-blue">{{ stats.nvDangLam }} đang làm</span> · <span class="s-yellow">{{ stats.nvChoLK }} chờ LK</span> · <span class="s-green">{{ stats.nvXong }} xong</span></div>
         </div>
         <div class="stat-wh">
-          <div class="stat-wh-title">📋 Khác</div>
+          <div class="stat-wh-title">Khác</div>
           <div class="stat-wh-row"><span class="s-blue">CSVN: {{ stats.csvnTong }}</span> · <span class="s-blue">Ca ngoài: {{ stats.ngoaiTong }}</span></div>
         </div>
       </div>
@@ -992,115 +1141,86 @@ onMounted(async () => {
     </div>
 
     <div v-show="!showChart" class="layout">
-      <div class="control-card">
-
-        <!-- Toggle loại ca -->
-        <div v-if="!showWarehouse || currentType !== 'ASVN'" class="toggle-row">
-          <button @click="selectType('ASVN'); showWarehouse = true"
-            :class="['btn fw-bold flex-grow-1', currentType==='ASVN' ? 'btn-primary text-white' : 'btn-outline-primary']">📋 ASVN</button>
-          <button @click="selectType('CSVN'); showWarehouse = false"
-            :class="['btn fw-bold flex-grow-1', currentType==='CSVN' ? 'btn-primary text-white' : 'btn-outline-primary']">📋 CSVN</button>
-          <button @click="selectType('OUTSIDE'); showWarehouse = false"
-            :class="['btn fw-bold flex-grow-1', currentType==='OUTSIDE' ? 'btn-primary text-white' : 'btn-outline-primary']">📝 Ca Ngoài</button>
+      <div class="control-card control-card--sticky">
+        <div class="filter-toolbar">
+          <div class="filter-summary">
+            <div class="filter-title">Danh sách công việc</div>
+            <div class="filter-meta-text">{{ currentType }} · {{ currentType === 'OUTSIDE' ? 'Ca ngoài' : (showWarehouse ? currentWarehouse : 'Tất cả kho') }}</div>
+          </div>
+          <button @click="showFilters = !showFilters" class="btn btn-outline-secondary fw-bold filter-button">
+            {{ showFilters ? 'Ẩn bộ lọc' : 'Bộ lọc' }}
+          </button>
         </div>
 
-        <!-- Warehouse toggle -->
-        <div v-if="showWarehouse && currentType === 'ASVN'" class="warehouse-toggle-row">
-          <div class="gear-container">
-            <button @click="backToTypeToggle" class="btn-gear" title="Quay về phân loại">⚙️</button>
-          </div>
-          <div class="warehouse-buttons">
-            <button @click="selectWarehouse('TDP'); showTab = 'danglam'"
-              :class="['btn fw-bold flex-grow-1', currentWarehouse==='TDP' ? 'btn-primary text-white' : 'btn-outline-primary']">🏭 TDP</button>
-            <button @click="selectWarehouse('NV'); showTab = 'danglam'"
-              :class="['btn fw-bold flex-grow-1', currentWarehouse==='NV' ? 'btn-success text-white' : 'btn-outline-success']">🏭 NV</button>
+        <div v-if="showFilters" class="filter-panel">
+          <div class="filter-grid">
+            <div class="filter-field">
+              <label class="filter-label">Loại ca</label>
+              <select v-model="currentType" class="form-select" @change="selectType(currentType)">
+                <option value="ASVN">ASVN</option>
+                <option value="CSVN">CSVN</option>
+                <option value="OUTSIDE">Ca ngoài</option>
+              </select>
+            </div>
+            <div v-if="currentType === 'ASVN'" class="filter-field">
+              <label class="filter-label">Kho</label>
+              <select v-model="currentWarehouse" class="form-select" @change="selectWarehouse(currentWarehouse)">
+                <option value="TDP">Kho TDP</option>
+                <option value="NV">Kho NV</option>
+              </select>
+            </div>
           </div>
         </div>
 
-        <!-- Tabs ASVN/CSVN -->
-        <div v-if="currentType !== 'OUTSIDE'" class="status-toggle-row">
+        <div v-if="currentType !== 'OUTSIDE'" class="status-toggle-row status-toggle-row--sticky">
           <button @click="showTab = 'danglam'" :class="['btn fw-bold flex-grow-1', showTab==='danglam' ? 'btn-primary text-white' : 'btn-outline-primary']">
-            ⚡ <span class="tab-label">ĐANG LÀM</span> ({{ dangLam.length }})
+            <span class="tab-label">ĐANG LÀM</span> ({{ dangLam.length }})
           </button>
           <button @click="showTab = 'cholinkien'" :class="['btn fw-bold flex-grow-1', showTab==='cholinkien' ? 'btn-warning text-white' : 'btn-outline-warning']">
-            ⏳ <span class="tab-label">CHỜ LK</span> ({{ choLinhKien.length }})
+            <span class="tab-label">CHỜ LK</span> ({{ choLinhKien.length }})
           </button>
           <button @click="showTab = 'hoanthanh'" :class="['btn fw-bold flex-grow-1', showTab==='hoanthanh' ? 'btn-success text-white' : 'btn-outline-success']">
-            ✅ <span class="tab-label">XONG</span> ({{ Object.values(hoanThanh).flat().length }})
+            <span class="tab-label">XONG</span> ({{ Object.values(hoanThanh).flat().length }})
           </button>
         </div>
 
         <!-- Tabs Ca Ngoài -->
-        <div v-if="currentType === 'OUTSIDE'" class="status-toggle-row">
+        <div v-if="currentType === 'OUTSIDE'" class="status-toggle-row status-toggle-row--sticky">
           <button @click="outsideTab = 'danglam'" :class="['btn fw-bold flex-grow-1', outsideTab==='danglam' ? 'btn-primary text-white' : 'btn-outline-primary']">
-            ⚡ <span class="tab-label">ĐANG LÀM</span> ({{ outsideDangLam.length }})
+            <span class="tab-label">ĐANG LÀM</span> ({{ outsideDangLam.length }})
           </button>
           <button @click="outsideTab = 'cholinkien'" :class="['btn fw-bold flex-grow-1', outsideTab==='cholinkien' ? 'btn-warning text-white' : 'btn-outline-warning']">
-            ⏳ <span class="tab-label">CHỜ LK</span> ({{ outsideChoLinhKien.length }})
+            <span class="tab-label">CHỜ LK</span> ({{ outsideChoLinhKien.length }})
           </button>
           <button @click="outsideTab = 'hoanthanh'" :class="['btn fw-bold flex-grow-1', outsideTab==='hoanthanh' ? 'btn-success text-white' : 'btn-outline-success']">
-            ✅ <span class="tab-label">XONG</span> ({{ outsideHoanThanh.length }})
+            <span class="tab-label">XONG</span> ({{ outsideHoanThanh.length }})
           </button>
         </div>
 
         <!-- Control body ASVN / CSVN -->
         <div v-if="currentType === 'ASVN' || currentType === 'CSVN'">
           <div v-if="showTab === 'danglam'" class="control-body">
-            <div class="d-flex justify-content-between align-items-start mb-3">
-              <textarea v-model="rawInput" rows="2" class="form-control flex-grow-1 me-3"
-                placeholder="Dán nội dung hoặc đợi tin nhắn Zalo..."
-                @keyup.enter="customHandleParse(rawInput)"></textarea>
-              <div class="d-flex gap-2">
-                <div class="position-relative" style="min-width:50px;">
-                  <button class="btn btn-outline-warning position-relative rounded-circle p-2 shadow"
-                    style="width:50px;height:50px;display:flex;align-items:center;justify-content:center;"
-                    @click="openTreModal" title="Ca đang làm trễ">
-                    <span style="font-size:1.8rem;">🔔</span>
-                    <span v-if="treCaList.length > 0"
-                      class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger border border-white"
-                      style="font-size:0.75rem;min-width:20px;height:20px;line-height:1.2;padding:0;">
-                      {{ treCaList.length }}
-                    </span>
-                  </button>
-                </div>
-                <div class="position-relative" style="min-width:50px;">
-                  <button class="btn btn-outline-danger position-relative rounded-circle p-2 shadow"
-                    style="width:50px;height:50px;display:flex;align-items:center;justify-content:center;"
-                    @click="showChoLkTreModal = true" title="Ca chờ LK trễ >3 ngày">
-                    <span style="font-size:1.8rem;">⏰</span>
-                    <span v-if="choLkTreList.length > 0"
-                      class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger border border-white"
-                      style="font-size:0.75rem;min-width:20px;height:20px;line-height:1.2;padding:0;">
-                      {{ choLkTreList.length }}
-                    </span>
-                  </button>
-                </div>
-              </div>
-            </div>
             <div class="control-actions">
-              <button @click="customHandleParse(rawInput)" class="btn btn-primary fw-bold" :disabled="isParsing">
-                <span v-if="isParsing" class="spinner-border spinner-border-sm me-1"></span>
-                {{ isParsing ? 'ĐANG XỬ LÝ...' : 'NHẬP KHÁCH' }}
-              </button>
-              <button @click="openRouteModal" class="btn btn-info fw-bold">🗺️ HÀNH TRÌNH</button>
-              <input type="text" v-model="searchQuery" class="form-control" placeholder="🔍 Tìm kiếm nhanh...">
+              <button @click="openQuickCreateModal" class="btn btn-primary fw-bold">+ TẠO / DÁN CA</button>
+              <button @click="openRouteModal" class="btn btn-info fw-bold">HÀNH TRÌNH</button>
+              <input type="text" v-model="searchQuery" class="form-control" placeholder="Tìm kiếm nhanh...">
             </div>
           </div>
 
           <div v-else-if="showTab === 'cholinkien'" class="control-body">
-            <input v-model="searchQuery" type="text" class="form-control" placeholder="🔍 Tìm theo tên, SĐT, mã ca, model, serial, linh kiện...">
+            <input v-model="searchQuery" type="text" class="form-control" placeholder="Tìm theo tên, SĐT, mã ca, model, serial, linh kiện...">
           </div>
 
           <div v-else-if="showTab === 'hoanthanh'" class="control-body">
             <div class="d-flex gap-2 flex-wrap">
               <input type="text" v-model="historySearchQuery" class="form-control flex-grow-1 mb-2"
-                placeholder="🔍 Tìm trong lịch sử...">
+                placeholder="Tìm trong lịch sử...">
               <template v-if="isAdmin">
                 <div v-if="showWarehouse" class="d-flex gap-1 w-100">
-                  <button @click="exportHoanThanhByWarehouse('TDP')" class="btn btn-outline-primary fw-bold flex-grow-1">📊 TDP</button>
-                  <button @click="exportHoanThanhByWarehouse('NV')"  class="btn btn-outline-success fw-bold flex-grow-1">📊 NV</button>
+                  <button @click="exportHoanThanhByWarehouse('TDP')" class="btn btn-outline-primary fw-bold flex-grow-1">Xuất TDP</button>
+                  <button @click="exportHoanThanhByWarehouse('NV')"  class="btn btn-outline-success fw-bold flex-grow-1">Xuất NV</button>
                 </div>
-                <button v-else @click="exportAllHoanThanh" class="btn btn-outline-dark fw-bold">📊 XUẤT EXCEL</button>
+                <button v-else @click="exportAllHoanThanh" class="btn btn-outline-dark fw-bold">XUẤT EXCEL</button>
               </template>
             </div>
           </div>
@@ -1108,8 +1228,14 @@ onMounted(async () => {
 
         <!-- Control body Ca Ngoài -->
         <div v-else-if="currentType === 'OUTSIDE'" class="control-body">
-          <button @click="openOutsideForm" class="btn btn-success fw-bold w-100 py-3 mb-2">+ NHẬN CA NGOÀI MỚI</button>
-          <input type="text" v-model="searchQuery" class="form-control mt-1" placeholder="🔍 Tìm kiếm nhanh...">
+          <div class="control-body-header">
+            <div>
+              <div class="control-body-title">Ca ngoài</div>
+              <div class="control-body-note">Dùng nút + nổi để tạo ca mới nhanh hơn.</div>
+            </div>
+            <button @click="openOutsideForm" class="btn btn-success fw-bold btn-sm">+ Tạo ca</button>
+          </div>
+          <input type="text" v-model="searchQuery" class="form-control mt-1" placeholder="Tìm kiếm nhanh...">
         </div>
       </div>
 
@@ -1134,26 +1260,28 @@ onMounted(async () => {
                 <div v-for="item in dangLam" :key="item.id" class="case-card swipe-card"
                   :ref="el => el && setupSwipe(el, item)"
                   @click="openDetailModalFull(item)" style="cursor:pointer;">
-                  <div class="swipe-hint-right">✅ Xong</div>
-                  <div class="swipe-hint-left">⏳ Chờ LK</div>
+                  <div class="swipe-hint-right">Xong</div>
+                  <div class="swipe-hint-left">Chờ LK</div>
                   <div class="card border-0 shadow-sm h-100">
                     <div class="card-body border-start border-5 border-primary d-flex flex-column">
-                      <div class="d-flex justify-content-between align-items-start mb-2">
+                      <div class="case-head">
                         <div class="d-flex align-items-center gap-2 flex-wrap">
                           <input type="checkbox" @click.stop @change="hoanTatKiemTra(item, $event)" style="width:20px;height:20px;">
-                          <span class="fw-bold text-primary">{{ item.ticketId }}</span>
+                          <span class="case-ticket text-primary">{{ item.ticketId }}</span>
                           <span v-if="item.warehouse" class="badge" :class="getWarehouseBadgeClass(item.warehouse)">{{ getWarehouseLabel(item) }}</span>
-                          <span class="badge bg-secondary">Chờ xử lý</span>
+                          <span class="badge bg-secondary">Đang xử lý</span>
                         </div>
-                        <button v-if="isAdmin" @click.stop="deleteCustomer(item.id)" class="btn btn-sm text-danger opacity-50">🗑️</button>
+                        <button v-if="isAdmin" @click.stop="deleteCustomer(item.id)" class="btn btn-sm text-danger opacity-50">Xóa</button>
                       </div>
-                      <div class="info-content">
-                        <div class="fw-bold text-dark">👤 {{ item.name }}</div>
-                        <a :href="'tel:'+item.phone" @click.stop class="fw-bold text-secondary mb-1 d-block text-decoration-none">📞 {{ item.phone }}</a>
-                        <div class="small text-muted mb-1">📺 {{ item.model }}</div>
-                        <div class="small text-muted mb-2">📍 {{ item.address }}</div>
-                        <div class="text-danger small fw-bold mb-2">⚠️ {{ item.issue }}</div>
-                        <div class="text-info small fw-bold">🔧 {{ item.replacedPart || 'Chưa có linh kiện' }}</div>
+                      <div class="case-main">
+                        <div class="case-primary">
+                          <div class="case-customer">{{ item.name }}</div>
+                          <a :href="'tel:'+item.phone" @click.stop class="case-phone text-decoration-none">{{ item.phone }}</a>
+                        </div>
+                        <div class="case-model">Model: {{ item.model }}</div>
+                        <div class="case-issue">Lỗi: {{ item.issue }}</div>
+                        <div class="case-meta">Địa chỉ: {{ item.address }}</div>
+                        <div class="case-part">Linh kiện: {{ item.replacedPart || 'Chưa có linh kiện' }}</div>
                       </div>
                     </div>
                   </div>
@@ -1171,26 +1299,28 @@ onMounted(async () => {
                 <div v-for="item in choLinhKien" :key="item.id" class="case-card swipe-card"
                   :ref="el => el && setupSwipe(el, item)"
                   @click="openDetailModalFull(item)" style="cursor:pointer;">
-                  <div class="swipe-hint-right">✅ Xong</div>
-                  <div class="swipe-hint-left">⚡ Đang làm</div>
+                  <div class="swipe-hint-right">Xong</div>
+                  <div class="swipe-hint-left">Đang làm</div>
                   <div class="card border-0 shadow-sm h-100">
                     <div class="card-body border-start border-5 border-warning d-flex flex-column">
-                      <div class="d-flex justify-content-between align-items-start mb-2 flex-wrap gap-2">
+                      <div class="case-head flex-wrap gap-2">
                         <div class="d-flex align-items-center gap-2 flex-wrap">
                           <button @click.stop="dongCa(item)" class="btn btn-sm btn-success">Chốt ca</button>
-                          <span class="fw-bold text-primary">{{ item.ticketId }}</span>
+                          <span class="case-ticket text-primary">{{ item.ticketId }}</span>
                           <span v-if="item.warehouse" class="badge" :class="getWarehouseBadgeClass(item.warehouse)">{{ getWarehouseLabel(item) }}</span>
                           <span class="badge bg-warning text-dark">Chờ linh kiện</span>
                         </div>
-                        <button v-if="isAdmin" @click.stop="deleteCustomer(item.id)" class="btn btn-sm text-danger opacity-50">🗑️</button>
+                        <button v-if="isAdmin" @click.stop="deleteCustomer(item.id)" class="btn btn-sm text-danger opacity-50">Xóa</button>
                       </div>
-                      <div class="info-content">
-                        <div class="fw-bold text-dark">👤 {{ item.name }}</div>
-                        <a :href="'tel:'+item.phone" @click.stop class="fw-bold text-secondary mb-1 d-block text-decoration-none">📞 {{ item.phone }}</a>
-                        <div class="small text-muted mb-1">📺 {{ item.model }}</div>
-                        <div class="small text-muted mb-2">📍 {{ item.address }}</div>
-                        <div class="text-danger small fw-bold mb-2">⚠️ {{ item.issue }}</div>
-                        <div class="text-info small fw-bold">🔧 {{ item.replacedPart || 'Chưa có linh kiện' }}</div>
+                      <div class="case-main">
+                        <div class="case-primary">
+                          <div class="case-customer">{{ item.name }}</div>
+                          <a :href="'tel:'+item.phone" @click.stop class="case-phone text-decoration-none">{{ item.phone }}</a>
+                        </div>
+                        <div class="case-model">Model: {{ item.model }}</div>
+                        <div class="case-issue">Lỗi: {{ item.issue }}</div>
+                        <div class="case-meta">Địa chỉ: {{ item.address }}</div>
+                        <div class="case-part">Linh kiện: {{ item.replacedPart || 'Chưa có linh kiện' }}</div>
                       </div>
                     </div>
                   </div>
@@ -1205,7 +1335,7 @@ onMounted(async () => {
             <div v-if="Object.keys(hoanThanh).length">
               <h5 class="mb-3">Hoàn thành</h5>
               <div v-for="(group, date) in hoanThanh" :key="date" class="mb-4">
-                <div class="mb-3"><span class="date-pill">📅 {{ date }} ({{ group.length }} ca)</span></div>
+                <div class="mb-3"><span class="date-pill">{{ date }} ({{ group.length }} ca)</span></div>
                 <div class="case-strip">
                   <div v-for="item in group" :key="item.id" class="case-card"
                     @click="openDetailModalFull(item)" style="cursor:pointer;">
@@ -1215,7 +1345,7 @@ onMounted(async () => {
                           <span class="fw-bold text-success">{{ item.ticketId }} - {{ item.name }}</span>
                           <span v-if="item.warehouse" class="badge" :class="getWarehouseBadgeClass(item.warehouse)">{{ getWarehouseLabel(item) }}</span>
                           <div class="d-flex gap-1">
-                            <button @click.stop="shareCustomer(item)" class="btn btn-sm btn-info text-white fw-bold">📤</button>
+                            <button @click.stop="shareCustomer(item)" class="btn btn-sm btn-info text-white fw-bold">Chia sẻ</button>
                             <button @click.stop="revertToDangLam(item)" class="btn btn-sm btn-warning">Hoàn lại</button>
                           </div>
                         </div>
@@ -1239,19 +1369,23 @@ onMounted(async () => {
                 <div v-for="item in outsideDangLam" :key="item.id" class="case-card swipe-card"
                   :ref="el => el && setupSwipe(el, item, true)"
                   @click="openOutsideDetailModal(item)" style="cursor:pointer;">
-                  <div class="swipe-hint-right">✅ Xong</div>
-                  <div class="swipe-hint-left">⏳ Chờ LK</div>
+                  <div class="swipe-hint-right">Xong</div>
+                  <div class="swipe-hint-left">Chờ LK</div>
                   <div class="card border-0 shadow-sm h-100">
                     <div class="card-body border-start border-5 border-primary">
-                      <div class="d-flex justify-content-between align-items-start mb-2">
-                        <span class="fw-bold text-primary">{{ item.ticketId }}</span>
-                        <button v-if="isAdmin" @click.stop="deleteCustomer(item.id)" class="btn btn-sm text-danger opacity-50">🗑️</button>
+                      <div class="case-head">
+                        <span class="case-ticket text-primary">{{ item.ticketId }}</span>
+                        <button v-if="isAdmin" @click.stop="deleteCustomer(item.id)" class="btn btn-sm text-danger opacity-50">Xóa</button>
                       </div>
-                      <div class="fw-bold text-dark">👤 {{ item.name }}</div>
-                      <a :href="'tel:'+item.phone" @click.stop class="fw-bold text-secondary mb-1 d-block text-decoration-none">📞 {{ item.phone }}</a>
-                      <div class="small text-muted mb-1">📺 {{ item.model }}</div>
-                      <div class="text-danger small fw-bold mb-1">⚠️ {{ item.issue }}</div>
-                      <div class="text-info small fw-bold">🔧 {{ item.replacedPart || 'Chưa có' }}</div>
+                      <div class="case-main">
+                        <div class="case-primary">
+                          <div class="case-customer">{{ item.name }}</div>
+                          <a :href="'tel:'+item.phone" @click.stop class="case-phone text-decoration-none">{{ item.phone }}</a>
+                        </div>
+                        <div class="case-model">Model: {{ item.model }}</div>
+                        <div class="case-issue">Lỗi: {{ item.issue }}</div>
+                        <div class="case-part">Linh kiện: {{ item.replacedPart || 'Chưa có' }}</div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1266,19 +1400,23 @@ onMounted(async () => {
                 <div v-for="item in outsideChoLinhKien" :key="item.id" class="case-card swipe-card"
                   :ref="el => el && setupSwipe(el, item, true)"
                   @click="openOutsideDetailModal(item)" style="cursor:pointer;">
-                  <div class="swipe-hint-right">✅ Xong</div>
-                  <div class="swipe-hint-left">⚡ Đang làm</div>
+                  <div class="swipe-hint-right">Xong</div>
+                  <div class="swipe-hint-left">Đang làm</div>
                   <div class="card border-0 shadow-sm h-100">
                     <div class="card-body border-start border-5 border-warning">
-                      <div class="d-flex justify-content-between align-items-start mb-2">
-                        <span class="fw-bold text-primary">{{ item.ticketId }}</span>
-                        <button v-if="isAdmin" @click.stop="deleteCustomer(item.id)" class="btn btn-sm text-danger opacity-50">🗑️</button>
+                      <div class="case-head">
+                        <span class="case-ticket text-primary">{{ item.ticketId }}</span>
+                        <button v-if="isAdmin" @click.stop="deleteCustomer(item.id)" class="btn btn-sm text-danger opacity-50">Xóa</button>
                       </div>
-                      <div class="fw-bold text-dark">👤 {{ item.name }}</div>
-                      <a :href="'tel:'+item.phone" @click.stop class="fw-bold text-secondary mb-1 d-block text-decoration-none">📞 {{ item.phone }}</a>
-                      <div class="small text-muted mb-1">📺 {{ item.model }}</div>
-                      <div class="text-danger small fw-bold mb-1">⚠️ {{ item.issue }}</div>
-                      <div class="text-info small fw-bold">🔧 {{ item.replacedPart || 'Chưa có' }}</div>
+                      <div class="case-main">
+                        <div class="case-primary">
+                          <div class="case-customer">{{ item.name }}</div>
+                          <a :href="'tel:'+item.phone" @click.stop class="case-phone text-decoration-none">{{ item.phone }}</a>
+                        </div>
+                        <div class="case-model">Model: {{ item.model }}</div>
+                        <div class="case-issue">Lỗi: {{ item.issue }}</div>
+                        <div class="case-part">Linh kiện: {{ item.replacedPart || 'Chưa có' }}</div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1294,15 +1432,22 @@ onMounted(async () => {
                   @click="openOutsideDetailModal(item)" style="cursor:pointer;">
                   <div class="card border-0 shadow-sm h-100">
                     <div class="card-body border-start border-5 border-success">
-                      <div class="d-flex justify-content-between align-items-start mb-2">
-                        <span class="fw-bold text-success">{{ item.ticketId }}</span>
-                        <button v-if="isAdmin" @click.stop="deleteCustomer(item.id)" class="btn btn-sm text-danger opacity-50">🗑️</button>
+                      <div class="case-head">
+                        <span class="case-ticket text-success">{{ item.ticketId }}</span>
+                        <button v-if="isAdmin" @click.stop="deleteCustomer(item.id)" class="btn btn-sm text-danger opacity-50">Xóa</button>
                       </div>
-                      <div class="fw-bold text-dark">👤 {{ item.name }}</div>
-                      <a :href="'tel:'+item.phone" @click.stop class="fw-bold text-secondary mb-1 d-block text-decoration-none">📞 {{ item.phone }}</a>
-                      <div class="small text-muted mb-1">📺 {{ item.model }}</div>
-                      <div class="text-danger small fw-bold mb-1">⚠️ {{ item.issue }}</div>
-                      <div class="text-info small fw-bold">🔧 {{ item.replacedPart || 'Chưa có' }}</div>
+                      <div class="case-main">
+                        <div class="case-primary">
+                          <div class="case-customer">{{ item.name }}</div>
+                          <a :href="'tel:'+item.phone" @click.stop class="case-phone text-decoration-none">{{ item.phone }}</a>
+                        </div>
+                        <div class="case-model">Model: {{ item.model }}</div>
+                        <div v-if="getWarrantyInfo(item)" :class="['small fw-bold mb-1', getWarrantyInfo(item).expired ? 'text-danger' : 'text-success']">
+                        Bảo hành: {{ getWarrantyInfo(item).remainingText }}
+                        </div>
+                        <div class="case-issue">Lỗi: {{ item.issue }}</div>
+                        <div class="case-part">Linh kiện: {{ item.replacedPart || 'Chưa có' }}</div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1329,10 +1474,15 @@ onMounted(async () => {
               <button type="button" class="btn-close btn-close-white" @click="closeDetailModal"></button>
             </div>
             <div class="modal-body">
+              <div class="detail-tabs">
+                <button @click="detailModalTab = 'info'" :class="['detail-tab-btn', detailModalTab === 'info' ? 'detail-tab-btn--active' : '']">Thông tin</button>
+                <button @click="detailModalTab = 'media'" :class="['detail-tab-btn', detailModalTab === 'media' ? 'detail-tab-btn--active' : '']">Ảnh & Video</button>
+                <button @click="detailModalTab = 'finance'" :class="['detail-tab-btn', detailModalTab === 'finance' ? 'detail-tab-btn--active' : '']">Viện phí</button>
+              </div>
               <div class="row">
-                <div class="col-md-5">
+                <div v-if="detailModalTab === 'info' || detailModalTab === 'finance'" class="col-md-5">
                   <h5 class="mb-1 fw-bold">{{ selectedCustomer.name }}</h5>
-                  <a :href="'tel:'+selectedCustomer.phone" class="text-secondary fw-bold mb-2 d-block text-decoration-none">📞 {{ selectedCustomer.phone }}</a>
+                  <a :href="'tel:'+selectedCustomer.phone" class="text-secondary fw-bold mb-2 d-block text-decoration-none">{{ selectedCustomer.phone }}</a>
                   <p v-if="selectedCustomer.warehouse"><strong>Kho:</strong> {{ selectedCustomer.warehouse }}</p>
                   <p v-if="selectedCustomer.serial"><strong>Serial:</strong> {{ selectedCustomer.serial }}</p>
                   <p v-if="selectedCustomer.branch"><strong>Chi nhánh:</strong> {{ selectedCustomer.branch }}</p>
@@ -1341,18 +1491,21 @@ onMounted(async () => {
                   <p><strong>Lỗi:</strong> <span class="text-danger fw-bold">{{ selectedCustomer.issue }}</span></p>
                   <p><strong>Ngày tạo:</strong> {{ formatDate(selectedCustomer.createdAt) }}</p>
                   <p v-if="selectedCustomer.doneDate"><strong>Ngày hoàn thành:</strong> {{ selectedCustomer.doneDate }}</p>
-                  <div class="mt-3 mb-3">
-                    <label class="form-label fw-bold">Chuyển trạng thái:</label>
-                    <div class="d-flex gap-2 flex-wrap">
-                      <button @click="changeStatus(0)" :class="['btn fw-bold flex-grow-1', selectedCustomer.status===0?'btn-primary':'btn-outline-primary']">⚡ Đang làm</button>
-                      <button @click="changeStatus(1)" :class="['btn fw-bold flex-grow-1', selectedCustomer.status===1?'btn-warning':'btn-outline-warning']">⏳ Chờ LK</button>
-                      <button @click="changeStatus(2)" :class="['btn fw-bold flex-grow-1', selectedCustomer.status===2?'btn-success':'btn-outline-success']">✅ Xong</button>
+                  <div class="mt-3 mb-3 status-editor">
+                    <label class="form-label fw-bold">Trạng thái:</label>
+                    <div class="status-editor-row">
+                      <select v-model="detailStatusDraft" class="form-select">
+                        <option :value="0">Đang làm</option>
+                        <option :value="1">Chờ linh kiện</option>
+                        <option :value="2">Hoàn thành</option>
+                      </select>
+                      <button @click="applyDetailStatus" class="btn btn-primary fw-bold">Cập nhật</button>
                     </div>
                   </div>
-                  <div v-if="selectedCustomer.statusLog?.length" class="mt-2 mb-3">
-                    <label class="form-label fw-bold">📋 Lịch sử trạng thái:</label>
+                  <div v-if="getStatusHistory(selectedCustomer.statusLog).length" class="mt-2 mb-3">
+                    <label class="form-label fw-bold">Lịch sử trạng thái:</label>
                     <div class="status-log">
-                      <div v-for="(log, i) in selectedCustomer.statusLog" :key="i" class="status-log-item">
+                      <div v-for="(log, i) in getStatusHistory(selectedCustomer.statusLog)" :key="i" class="status-log-item">
                         <span :class="['log-badge', log.status===0?'log-blue':log.status===1?'log-yellow':'log-green']">{{ log.label }}</span>
                         <span class="log-meta">{{ log.by }} · {{ log.at }}</span>
                       </div>
@@ -1365,19 +1518,19 @@ onMounted(async () => {
                       <button @click="saveFolderLink(selectedCustomer.id)" class="btn btn-primary fw-bold">Lưu</button>
                     </div>
                     <div v-else class="d-flex gap-2">
-                      <a :href="selectedCustomer.folderDrive" target="_blank" class="btn btn-sm btn-info text-white flex-grow-1 fw-bold">📂 MỞ DRIVE</a>
-                      <button @click="startEditFolder(selectedCustomer.id, selectedCustomer.folderDrive)" class="btn btn-sm btn-light border fw-bold">✏️</button>
+                      <a :href="selectedCustomer.folderDrive" target="_blank" class="btn btn-sm btn-info text-white flex-grow-1 fw-bold">MỞ DRIVE</a>
+                      <button @click="startEditFolder(selectedCustomer.id, selectedCustomer.folderDrive)" class="btn btn-sm btn-light border fw-bold">Sửa</button>
                     </div>
                   </div>
                   <!-- GIÁ TIỀN -->
-                  <div class="mt-3 price-block">
+                  <div v-if="detailModalTab === 'finance'" class="mt-3 price-block">
                     <div class="d-flex justify-content-between align-items-center mb-1">
-                      <label class="form-label fw-bold mb-0">💰 Phí sửa chữa:</label>
+                      <label class="form-label fw-bold mb-0">Phí sửa chữa:</label>
                       <button v-if="isAdmin" @click="openPriceEditor(selectedCustomer)" class="btn btn-sm btn-outline-success fw-bold">+ Linh kiện / Giá</button>
                     </div>
                     <div v-if="selectedCustomer.lkItems?.length" class="lk-price-list mb-2">
                       <div v-for="(lk, i) in selectedCustomer.lkItems" :key="i" class="lk-price-row">
-                        <span>🔩 {{ lk.name }}</span>
+                        <span>{{ lk.name }}</span>
                         <span class="fw-bold text-success">{{ formatPrice(lk.price) }}</span>
                       </div>
                       <div class="lk-price-total">
@@ -1391,9 +1544,9 @@ onMounted(async () => {
                     </div>
                   </div>
                 </div>
-                <div class="col-md-7">
+                <div v-if="detailModalTab === 'media' || detailModalTab === 'finance'" class="col-md-7">
                   <h6 class="mb-3">Ảnh &amp; Video</h6>
-                  <div v-if="!selectedCustomer.media?.length" class="text-muted small mb-3">⏳ Đang tải ảnh...</div>
+                  <div v-if="!selectedCustomer.media?.length" class="text-muted small mb-3">Đang tải ảnh...</div>
                   <div class="media-grid">
                     <div v-for="(m, idx) in selectedCustomer.media || []" :key="idx" class="media-item position-relative">
                       <img v-if="m.type!=='video'" :src="m.data" @click="openMediaModal(m)" alt="Ảnh" style="cursor:pointer;" loading="lazy">
@@ -1409,9 +1562,9 @@ onMounted(async () => {
               </div>
             </div>
             <div class="modal-footer">
-              <button @click="shareCustomer(selectedCustomer)" class="btn btn-info fw-bold text-white">📤 Chia sẻ</button>
-              <button @click="openEditModal(selectedCustomer, 'asvn')" class="btn btn-warning fw-bold">✏️ Sửa ca</button>
-              <button v-if="isAdmin" @click="deleteCustomer(selectedCustomer.id)" class="btn btn-danger">🗑️ Xóa ca</button>
+              <button @click="shareCustomer(selectedCustomer)" class="btn btn-info fw-bold text-white">Chia sẻ</button>
+              <button @click="openEditModal(selectedCustomer, 'asvn')" class="btn btn-warning fw-bold">Sửa ca</button>
+              <button v-if="isAdmin" @click="deleteCustomer(selectedCustomer.id)" class="btn btn-danger">Xóa ca</button>
               <button type="button" class="btn btn-secondary" @click="closeDetailModal">Đóng</button>
             </div>
           </div>
@@ -1434,28 +1587,64 @@ onMounted(async () => {
               <button type="button" class="btn-close btn-close-white" @click="closeOutsideDetailModal"></button>
             </div>
             <div class="modal-body">
+              <div class="detail-tabs">
+                <button @click="outsideModalTab = 'info'" :class="['detail-tab-btn', outsideModalTab === 'info' ? 'detail-tab-btn--active' : '']">Thông tin</button>
+                <button @click="outsideModalTab = 'media'" :class="['detail-tab-btn', outsideModalTab === 'media' ? 'detail-tab-btn--active' : '']">Ảnh & Video</button>
+                <button @click="outsideModalTab = 'finance'" :class="['detail-tab-btn', outsideModalTab === 'finance' ? 'detail-tab-btn--active' : '']">Viện phí</button>
+              </div>
               <div class="row">
-                <div class="col-md-5">
+                <div v-if="outsideModalTab === 'info' || outsideModalTab === 'finance'" class="col-md-5">
                   <h5 class="mb-1 fw-bold">{{ selectedOutside.name }}</h5>
-                  <a :href="'tel:'+selectedOutside.phone" class="text-secondary fw-bold mb-3 d-block text-decoration-none">📞 {{ selectedOutside.phone }}</a>
+                  <a :href="'tel:'+selectedOutside.phone" class="text-secondary fw-bold mb-3 d-block text-decoration-none">{{ selectedOutside.phone }}</a>
                   <p><strong>Model:</strong> {{ selectedOutside.model }}</p>
                   <p><strong>Lỗi:</strong> <span class="text-danger fw-bold">{{ selectedOutside.issue }}</span></p>
                   <p><strong>Ngày tạo:</strong> {{ formatDate(selectedOutside.createdAt) }}</p>
                   <p v-if="selectedOutside.doneDate"><strong>Ngày hoàn thành:</strong> {{ selectedOutside.doneDate }}</p>
-                  <div class="mt-3 mb-3">
-                    <label class="form-label fw-bold">Chuyển trạng thái:</label>
-                    <div class="d-flex gap-2 flex-wrap">
-                      <button @click="changeOutsideStatus(0)" :class="['btn fw-bold flex-grow-1', selectedOutside.status===0?'btn-primary':'btn-outline-primary']">⚡ Đang làm</button>
-                      <button @click="changeOutsideStatus(1)" :class="['btn fw-bold flex-grow-1', selectedOutside.status===1?'btn-warning':'btn-outline-warning']">⏳ Chờ LK</button>
-                      <button @click="changeOutsideStatus(2)" :class="['btn fw-bold flex-grow-1', selectedOutside.status===2?'btn-success':'btn-outline-success']">✅ Xong</button>
+                  <div class="mt-3 mb-3 status-editor">
+                    <label class="form-label fw-bold">Trạng thái:</label>
+                    <div class="status-editor-row">
+                      <select v-model="outsideStatusDraft" class="form-select">
+                        <option :value="0">Đang làm</option>
+                        <option :value="1">Chờ linh kiện</option>
+                        <option :value="2">Hoàn thành</option>
+                      </select>
+                      <button @click="applyOutsideStatus" class="btn btn-primary fw-bold">Cập nhật</button>
                     </div>
                   </div>
-                  <div v-if="selectedOutside.statusLog?.length" class="mt-2 mb-3">
-                    <label class="form-label fw-bold">📋 Lịch sử trạng thái:</label>
+                  <div v-if="getStatusHistory(selectedOutside.statusLog).length" class="mt-2 mb-3">
+                    <label class="form-label fw-bold">Lịch sử trạng thái:</label>
                     <div class="status-log">
-                      <div v-for="(log, i) in selectedOutside.statusLog" :key="i" class="status-log-item">
+                      <div v-for="(log, i) in getStatusHistory(selectedOutside.statusLog)" :key="i" class="status-log-item">
                         <span :class="['log-badge', log.status===0?'log-blue':log.status===1?'log-yellow':'log-green']">{{ log.label }}</span>
                         <span class="log-meta">{{ log.by }} · {{ log.at }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="selectedOutside.status === 2" class="mt-3 warranty-block">
+                    <div class="d-flex justify-content-between align-items-center mb-2 gap-2 flex-wrap">
+                      <label class="form-label fw-bold mb-0">Bảo hành ca ngoài:</label>
+                      <button v-if="isAdmin" @click="showWarrantyOptions = !showWarrantyOptions" class="btn btn-sm btn-outline-primary fw-bold">
+                        {{ getWarrantyInfo(selectedOutside) ? 'Đổi thời gian BH' : '+ Thêm bảo hành' }}
+                      </button>
+                    </div>
+                    <div v-if="getWarrantyInfo(selectedOutside)" class="warranty-summary">
+                      <div><strong>Gói:</strong> {{ getWarrantyInfo(selectedOutside).label }}</div>
+                      <div><strong>Bắt đầu:</strong> {{ getWarrantyInfo(selectedOutside).startText }}</div>
+                      <div><strong>Hết hạn:</strong> {{ getWarrantyInfo(selectedOutside).expiresText }}</div>
+                      <div :class="['fw-bold', getWarrantyInfo(selectedOutside).expired ? 'text-danger' : 'text-success']">
+                        {{ getWarrantyInfo(selectedOutside).remainingText }}
+                      </div>
+                    </div>
+                    <div v-if="showWarrantyOptions" class="warranty-actions">
+                      <div class="d-flex gap-2 flex-wrap">
+                        <button @click="saveOutsideWarranty(1)" class="btn btn-outline-primary btn-sm fw-bold">1 tháng</button>
+                        <button @click="saveOutsideWarranty(3)" class="btn btn-outline-primary btn-sm fw-bold">3 tháng</button>
+                        <button @click="saveOutsideWarranty(6)" class="btn btn-outline-primary btn-sm fw-bold">6 tháng</button>
+                        <button @click="showCustomWarrantyInput = !showCustomWarrantyInput" class="btn btn-outline-dark btn-sm fw-bold">Tự nhập</button>
+                      </div>
+                      <div v-if="showCustomWarrantyInput" class="input-group input-group-sm mt-2">
+                        <input v-model.number="customWarrantyMonths" type="number" min="1" class="form-control" placeholder="Nhập số tháng bảo hành...">
+                        <button @click="saveCustomOutsideWarranty" class="btn btn-primary fw-bold">Lưu</button>
                       </div>
                     </div>
                   </div>
@@ -1466,19 +1655,19 @@ onMounted(async () => {
                       <button @click="saveFolderLink(selectedOutside.id)" class="btn btn-primary">Lưu</button>
                     </div>
                     <div v-else class="d-flex gap-2">
-                      <a :href="selectedOutside.folderDrive" target="_blank" class="btn btn-sm btn-info text-white flex-grow-1 fw-bold">📂 MỞ DRIVE</a>
-                      <button @click="startEditFolder(selectedOutside.id, selectedOutside.folderDrive)" class="btn btn-sm btn-light border">✏️</button>
+                      <a :href="selectedOutside.folderDrive" target="_blank" class="btn btn-sm btn-info text-white flex-grow-1 fw-bold">MỞ DRIVE</a>
+                      <button @click="startEditFolder(selectedOutside.id, selectedOutside.folderDrive)" class="btn btn-sm btn-light border">Sửa</button>
                     </div>
                   </div>
                   <!-- GIÁ TIỀN Ca Ngoài -->
-                  <div class="mt-3 price-block">
+                  <div v-if="outsideModalTab === 'finance'" class="mt-3 price-block">
                     <div class="d-flex justify-content-between align-items-center mb-1">
-                      <label class="form-label fw-bold mb-0">💰 Phí sửa chữa:</label>
+                      <label class="form-label fw-bold mb-0">Phí sửa chữa:</label>
                       <button v-if="isAdmin" @click="openPriceEditor(selectedOutside)" class="btn btn-sm btn-outline-success fw-bold">+ Linh kiện / Giá</button>
                     </div>
                     <div v-if="selectedOutside.lkItems?.length" class="lk-price-list mb-2">
                       <div v-for="(lk, i) in selectedOutside.lkItems" :key="i" class="lk-price-row">
-                        <span>🔩 {{ lk.name }}</span>
+                        <span>{{ lk.name }}</span>
                         <span class="fw-bold text-success">{{ formatPrice(lk.price) }}</span>
                       </div>
                       <div class="lk-price-total">
@@ -1492,9 +1681,9 @@ onMounted(async () => {
                     </div>
                   </div>
                 </div>
-                <div class="col-md-7">
+                <div v-if="outsideModalTab === 'media' || outsideModalTab === 'finance'" class="col-md-7">
                   <h6 class="mb-3">Ảnh &amp; Video</h6>
-                  <div v-if="!selectedOutside.media?.length" class="text-muted small mb-3">⏳ Đang tải ảnh...</div>
+                  <div v-if="!selectedOutside.media?.length" class="text-muted small mb-3">Đang tải ảnh...</div>
                   <div class="media-grid">
                     <div v-for="(m, idx) in selectedOutside.media || []" :key="idx" class="media-item position-relative">
                       <img v-if="m.type!=='video'" :src="m.data" @click="openMediaModal(m)" alt="Ảnh" style="cursor:pointer;" loading="lazy">
@@ -1510,9 +1699,9 @@ onMounted(async () => {
               </div>
             </div>
             <div class="modal-footer">
-              <button @click="shareCustomer(selectedOutside)" class="btn btn-info fw-bold text-white">📤 Chia sẻ</button>
-              <button @click="openEditModal(selectedOutside, 'outside')" class="btn btn-warning fw-bold">✏️ Sửa ca</button>
-              <button v-if="isAdmin" @click="deleteCustomer(selectedOutside.id)" class="btn btn-danger">🗑️ Xóa ca</button>
+              <button @click="shareCustomer(selectedOutside)" class="btn btn-info fw-bold text-white">Chia sẻ</button>
+              <button @click="openEditModal(selectedOutside, 'outside')" class="btn btn-warning fw-bold">Sửa ca</button>
+              <button v-if="isAdmin" @click="deleteCustomer(selectedOutside.id)" class="btn btn-danger">Xóa ca</button>
               <button type="button" class="btn btn-secondary" @click="closeOutsideDetailModal">Đóng</button>
             </div>
           </div>
@@ -1530,13 +1719,13 @@ onMounted(async () => {
             <div class="modal-body">
               <!-- Ô dán nhanh -->
               <div class="mb-3 p-3 rounded" style="background:#f0fdf4;border:1px solid #bbf7d0;">
-                <label class="form-label fw-bold mb-1">📋 Dán thông tin nhanh</label>
+                <label class="form-label fw-bold mb-1">Dán thông tin nhanh</label>
                 <div class="d-flex gap-2">
                   <textarea v-model="outsideRawInput" class="form-control" rows="2"
                     placeholder='Dán nội dung'></textarea>
                   <button @click="parseOutsideText" :disabled="!outsideRawInput.trim()"
                     class="btn btn-success fw-bold" style="white-space:nowrap;min-width:80px;">
-                    🔍 Lọc
+                    Lọc
                   </button>
                 </div>
                 <small class="text-muted mt-1 d-block">Dán xong bấm Lọc → tự điền vào form bên dưới</small>
@@ -1556,6 +1745,35 @@ onMounted(async () => {
             <div class="modal-footer">
               <button type="button" class="btn btn-secondary" @click="closeOutsideForm">Đóng</button>
               <button type="button" class="btn btn-success" @click="saveOutsideCa">Lưu Ca Ngoài</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ MODAL TẠO / DÁN CA ══ -->
+      <div v-if="showQuickCreateModal" class="modal fade show" tabindex="-1" style="display:block;background:rgba(0,0,0,0.55);">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+          <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+              <h5 class="modal-title">Tạo Ca Mới</h5>
+              <button type="button" class="btn-close btn-close-white" @click="closeQuickCreateModal"></button>
+            </div>
+            <div class="modal-body">
+              <label class="form-label fw-bold">Dán nội dung để tự nhận diện</label>
+              <textarea
+                v-model="rawInput"
+                rows="6"
+                class="form-control"
+                placeholder="Dán nội dung ASVN / CSVN / Zalo vào đây..."
+                @keyup.enter="customHandleParse(rawInput)"
+              ></textarea>
+              <small class="text-muted d-block mt-2">Hệ thống sẽ tự parse khi nội dung hợp lệ.</small>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" @click="closeQuickCreateModal">Đóng</button>
+              <button @click="customHandleParse(rawInput); closeQuickCreateModal()" class="btn btn-primary fw-bold" :disabled="isParsing">
+                {{ isParsing ? 'Đang xử lý...' : 'Nhập khách' }}
+              </button>
             </div>
           </div>
         </div>
@@ -1584,7 +1802,7 @@ onMounted(async () => {
                   class="list-group-item list-group-item-action"
                   :class="{ 'list-group-item-warning fw-bold': part === 'Khác' }"
                   @click="selectPart(part)">
-                  {{ part === 'Khác' ? '✏️ Khác (tự nhập)' : part }}
+                  {{ part === 'Khác' ? 'Khác (tự nhập)' : part }}
                 </button>
               </div>
               <div v-else>
@@ -1593,7 +1811,7 @@ onMounted(async () => {
                   placeholder="VD: Thay loa, Thay remote..." @keyup.enter="confirmCustomPart" autofocus>
                 <div class="d-flex gap-2">
                   <button @click="showCustomInput = false" class="btn btn-outline-secondary flex-grow-1">← Quay lại</button>
-                  <button @click="confirmCustomPart" class="btn btn-success flex-grow-1 fw-bold">✅ Xác nhận</button>
+                  <button @click="confirmCustomPart" class="btn btn-success flex-grow-1 fw-bold">Xác nhận</button>
                 </div>
               </div>
             </div>
@@ -1642,7 +1860,7 @@ onMounted(async () => {
         <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
           <div class="modal-content">
             <div class="modal-header bg-info text-white">
-              <h5 class="modal-title">📍 Tính Hành Trình Thuận Tiện</h5>
+              <h5 class="modal-title">Tính Hành Trình Thuận Tiện</h5>
               <button type="button" class="btn-close btn-close-white" @click="closeRouteModal"></button>
             </div>
             <div class="modal-body">
@@ -1652,12 +1870,12 @@ onMounted(async () => {
                   <input v-model="currentLocation" type="text" class="form-control"
                     placeholder="VD: 123 Nguyễn Văn Linh, Đà Nẵng" @keyup.enter="calculateRoute">
                   <button @click="calculateRoute" :disabled="isLoadingRoute" class="btn btn-info fw-bold">
-                    {{ isLoadingRoute ? '⏳ Đang tính...' : '🚀 Tính tuyến đường' }}
+                    {{ isLoadingRoute ? 'Đang tính...' : 'Tính tuyến đường' }}
                   </button>
                 </div>
               </div>
               <div v-if="currentCoords" class="alert alert-success mb-4">
-                ✅ Vị trí: <strong>{{ currentCoords.displayName || `${currentCoords.lat.toFixed(5)}, ${currentCoords.lng.toFixed(5)}` }}</strong>
+                Vị trí: <strong>{{ currentCoords.displayName || `${currentCoords.lat.toFixed(5)}, ${currentCoords.lng.toFixed(5)}` }}</strong>
               </div>
               <div v-if="isLoadingRoute" class="text-center py-5">
                 <div class="spinner-border text-info" style="width:3rem;height:3rem;"></div>
@@ -1679,9 +1897,9 @@ onMounted(async () => {
                           <span v-else class="badge bg-secondary ms-2">Không xác định</span>
                         </div>
                       </div>
-                      <div class="mb-1"><strong>📞</strong> {{ item.phone }}</div>
-                      <div class="mb-1"><strong>📍</strong> {{ item.displayAddress }}</div>
-                      <small class="text-danger fw-bold">⚠️ {{ item.issue }}</small>
+                      <div class="mb-1"><strong>SĐT:</strong> {{ item.phone }}</div>
+                      <div class="mb-1"><strong>Địa chỉ:</strong> {{ item.displayAddress }}</div>
+                      <small class="text-danger fw-bold">Lỗi: {{ item.issue }}</small>
                     </div>
                   </button>
                 </div>
@@ -1696,12 +1914,21 @@ onMounted(async () => {
 
     </div>
 
+    <button
+      v-if="!showChart && isLoggedIn && !showDetailModal && !showOutsideDetailModal && !showModal && !showEditModal && !showLkForm"
+      @click="openCreateCaseModal"
+      class="fab-create"
+      :title="currentType === 'OUTSIDE' ? 'Tạo ca ngoài' : 'Tạo / dán ca mới'"
+    >
+      +
+    </button>
+
       <!-- ══ MODAL LINH KIỆN + GIÁ (Admin) ══ -->
       <div v-if="showLkForm" class="modal fade show" tabindex="-1" style="display:block;background:rgba(0,0,0,0.7);">
         <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
           <div class="modal-content">
             <div class="modal-header bg-success text-white">
-              <h5 class="modal-title">💰 Linh kiện & Phí sửa chữa</h5>
+              <h5 class="modal-title">Linh kiện & Phí sửa chữa</h5>
               <button type="button" class="btn-close btn-close-white" @click="showLkForm = false"></button>
             </div>
             <div class="modal-body">
@@ -1709,7 +1936,7 @@ onMounted(async () => {
               <div v-if="editingLkItems.length" class="mb-3">
                 <label class="form-label fw-bold">Linh kiện đã thêm:</label>
                 <div v-for="(lk, i) in editingLkItems" :key="i" class="lk-edit-row">
-                  <span class="flex-grow-1">🔩 {{ lk.name }}</span>
+                  <span class="flex-grow-1">{{ lk.name }}</span>
                   <span class="fw-bold text-success me-2">{{ formatPrice(lk.price) }}</span>
                   <button @click="removeLkItem(i)" class="btn btn-sm btn-danger">×</button>
                 </div>
@@ -1740,7 +1967,7 @@ onMounted(async () => {
             </div>
             <div class="modal-footer">
               <button @click="showLkForm = false" class="btn btn-secondary">Hủy</button>
-              <button @click="savePriceAndLk(selectedCustomer || selectedOutside)" class="btn btn-success fw-bold">💾 Lưu</button>
+              <button @click="savePriceAndLk(selectedCustomer || selectedOutside)" class="btn btn-success fw-bold">Lưu</button>
             </div>
           </div>
         </div>
@@ -1751,7 +1978,7 @@ onMounted(async () => {
         <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
           <div class="modal-content">
             <div class="modal-header bg-danger text-white">
-              <h5 class="modal-title">⏰ Ca chờ linh kiện trễ ({{ choLkTreList.length }} ca)</h5>
+              <h5 class="modal-title">Ca chờ linh kiện trễ ({{ choLkTreList.length }} ca)</h5>
               <button type="button" class="btn-close btn-close-white" @click="showChoLkTreModal = false"></button>
             </div>
             <div class="modal-body p-3">
@@ -1766,8 +1993,8 @@ onMounted(async () => {
                       <span class="badge bg-danger">Trễ LK</span>
                     </div>
                     <div class="mb-1 fw-bold">{{ item.name }} — {{ item.phone }}</div>
-                    <div class="small text-muted mb-1">📺 {{ item.model }}</div>
-                    <div v-if="item.replacedPart && item.replacedPart !== 'Chưa có'" class="small text-warning fw-bold">🔩 Đang chờ: {{ item.replacedPart }}</div>
+                    <div class="small text-muted mb-1">Model: {{ item.model }}</div>
+                    <div v-if="item.replacedPart && item.replacedPart !== 'Chưa có'" class="small text-warning fw-bold">Đang chờ: {{ item.replacedPart }}</div>
                     <div v-if="item.statusLog?.length" class="small text-muted mt-1">
                       Chuyển chờ LK: {{ [...item.statusLog].reverse().find(l=>l.status===1)?.at }}
                       bởi {{ [...item.statusLog].reverse().find(l=>l.status===1)?.by }}
@@ -1788,7 +2015,7 @@ onMounted(async () => {
         <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
           <div class="modal-content">
             <div class="modal-header bg-warning text-dark">
-              <h5 class="modal-title">✏️ Sửa thông tin ca</h5>
+              <h5 class="modal-title">Sửa thông tin ca</h5>
               <button type="button" class="btn-close" @click="closeEditModal"></button>
             </div>
             <div class="modal-body">
@@ -1826,7 +2053,7 @@ onMounted(async () => {
             </div>
             <div class="modal-footer">
               <button type="button" class="btn btn-secondary" @click="closeEditModal">Hủy</button>
-              <button type="button" class="btn btn-warning fw-bold" @click="saveEditCa">💾 Lưu thay đổi</button>
+              <button type="button" class="btn btn-warning fw-bold" @click="saveEditCa">Lưu thay đổi</button>
             </div>
           </div>
         </div>
@@ -1868,6 +2095,8 @@ onMounted(async () => {
 .btn-topbar   { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 0.35rem 0.75rem; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all .2s; }
 .btn-topbar:hover { background: rgba(255,255,255,0.2); }
 .btn-topbar--active { background: #3b82f6; border-color: #3b82f6; }
+.btn-topbar--alert { position: relative; }
+.topbar-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 0.3rem; border-radius: 999px; background: #ef4444; color: #fff; font-size: 0.7rem; font-weight: 700; margin-left: 0.35rem; }
 .btn-topbar--logout { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.4); }
 .btn-topbar--logout:hover { background: rgba(239,68,68,0.3); }
 
@@ -1890,9 +2119,20 @@ onMounted(async () => {
 .page-wrap { min-height: 100vh; background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); font-family: system-ui, -apple-system, sans-serif; }
 .layout { max-width: 1450px; margin: 0 auto; padding: 1.5rem 1rem; display: flex; flex-direction: column; gap: 1.5rem; }
 .control-card, .cases-section { background: #fff; border-radius: 20px; padding: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,.05), 0 2px 4px -1px rgba(0,0,0,.1); border: 1px solid #e2e8f0; }
+.control-card--sticky { position: sticky; top: 64px; z-index: 40; }
+.filter-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.filter-summary { min-width: 0; }
+.filter-title { font-size: 1rem; font-weight: 800; color: #0f172a; }
+.filter-meta-text { color: #64748b; font-size: 0.85rem; }
+.filter-button { white-space: nowrap; }
+.filter-panel { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1rem; margin-bottom: 1rem; }
+.filter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+.filter-field { display: flex; flex-direction: column; gap: 0.35rem; }
+.filter-label { font-size: 0.82rem; font-weight: 700; color: #475569; }
 
 /* ── Buttons/Toggles ──────────────────────────────────────── */
 .toggle-row, .status-toggle-row, .warehouse-toggle-row { display: flex; gap: 0.75rem; margin-bottom: 1rem; }
+.status-toggle-row--sticky { position: sticky; top: 0; z-index: 5; background: #fff; padding-top: 0.25rem; }
 .toggle-row button, .status-toggle-row button { flex: 1; padding: 0.875rem 1rem; border-radius: 12px; font-size: 1rem; font-weight: 600; transition: all .3s; box-shadow: 0 2px 4px rgba(0,0,0,.08); border: 2px solid #cbd5e1; background: #f1f5f9; color: #475569; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
 .toggle-row button:hover, .status-toggle-row button:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.15); }
 .warehouse-toggle-row { align-items: center; }
@@ -1904,6 +2144,9 @@ onMounted(async () => {
 
 /* ── Control body ─────────────────────────────────────────── */
 .control-body { background: #f8f9fa; border-radius: 12px; padding: 1.25rem; border: 1px solid #e5e7eb; }
+.control-body-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.85rem; }
+.control-body-title { font-size: 0.95rem; font-weight: 800; color: #0f172a; }
+.control-body-note { font-size: 0.82rem; color: #64748b; }
 .control-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-top: 1rem; }
 .control-actions input { grid-column: span 3; padding: 0.875rem; font-size: 1rem; }
 
@@ -1917,6 +2160,23 @@ onMounted(async () => {
 .card-body { padding: 1.5rem; }
 .info-content { flex: 1; display: flex; flex-direction: column; gap: 0.5rem; font-size: 1rem; }
 .info-content .fw-bold { font-size: 1.1rem; line-height: 1.3; }
+.case-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.85rem; }
+.case-ticket { font-size: 1.02rem; font-weight: 800; letter-spacing: -0.02em; }
+.case-main { display: flex; flex-direction: column; gap: 0.45rem; }
+.case-primary { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+.case-customer { font-size: 1.08rem; font-weight: 800; color: #111827; }
+.case-phone { font-size: 0.95rem; font-weight: 700; color: #475569; }
+.case-model { color: #0f172a; font-weight: 700; }
+.case-issue { color: #dc2626; font-weight: 800; line-height: 1.35; }
+.case-meta { color: #64748b; font-size: 0.9rem; }
+.case-part { color: #0369a1; font-size: 0.92rem; font-weight: 700; }
+.status-editor { background: #f8fafc; border: 1px solid #dbe3ef; border-radius: 12px; padding: 0.9rem; }
+.status-editor-row { display: flex; gap: 0.65rem; align-items: center; }
+.detail-tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; overflow-x: auto; }
+.detail-tab-btn { border: 1px solid #cbd5e1; background: #f8fafc; color: #475569; border-radius: 999px; padding: 0.45rem 0.9rem; font-weight: 700; font-size: 0.85rem; }
+.detail-tab-btn--active { background: #1d4ed8; color: #fff; border-color: #1d4ed8; }
+.fab-create { position: fixed; right: 1rem; bottom: 1rem; width: 58px; height: 58px; border: none; border-radius: 50%; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; font-size: 2rem; line-height: 1; box-shadow: 0 14px 28px rgba(37,99,235,.28); z-index: 120; display: inline-flex; align-items: center; justify-content: center; }
+.fab-create:hover { transform: translateY(-2px); box-shadow: 0 18px 32px rgba(37,99,235,.34); }
 
 /* ── Media grid ───────────────────────────────────────────── */
 .media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 0.75rem; margin: 1rem 0; }
@@ -1954,6 +2214,7 @@ onMounted(async () => {
   .topbar-right { gap: 0.3rem; flex-shrink: 0; }
   .btn-topbar { padding: 0.3rem 0.45rem; font-size: 1rem; border-radius: 6px; white-space: nowrap; min-width: 36px; }
   .btn-text { display: none; }
+  .topbar-badge { margin-left: 0; position: absolute; top: -5px; right: -5px; }
   .tab-label { display: none; }
   .status-toggle-row button { font-size: 0.85rem; padding: 0.6rem 0.4rem; }
   .modal-dialog { margin: 0.5rem; max-width: calc(100% - 1rem); }
@@ -1961,6 +2222,8 @@ onMounted(async () => {
 @media (max-width: 768px) {
   .layout { padding: 1rem 0.5rem; gap: 1rem; }
   .control-card, .cases-section { padding: 1rem; border-radius: 16px; }
+  .control-card--sticky { top: 56px; }
+  .filter-grid { grid-template-columns: 1fr; }
   .toggle-row, .status-toggle-row { gap: 0.5rem; }
   .toggle-row button, .status-toggle-row button { flex: 1; padding: 0.75rem 0.5rem; font-size: 0.85rem; }
   .warehouse-toggle-row { flex-direction: column; align-items: stretch; }
@@ -1970,6 +2233,10 @@ onMounted(async () => {
   .case-strip { grid-template-columns: 1fr; }
   .section-title { font-size: 1.25rem; }
   .toast-container { max-width: calc(100vw - 2rem); }
+  .case-primary { flex-direction: column; align-items: flex-start; gap: 0.2rem; }
+  .status-editor-row { flex-direction: column; align-items: stretch; }
+  .control-body-header { align-items: flex-start; }
+  .fab-create { right: 0.75rem; bottom: 0.75rem; width: 54px; height: 54px; }
 }
 @media (min-width: 1200px) {
   .case-strip { grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); }
@@ -1984,7 +2251,7 @@ onMounted(async () => {
 .log-meta   { color: #64748b; }
 
 /* ── Swipe card ───────────────────────────────────────────── */
-.swipe-card { position: relative; overflow: hidden; }
+.swipe-card { position: relative; overflow: hidden; transition: transform .28s cubic-bezier(.22,1,.36,1), box-shadow .28s ease; will-change: transform; }
 .swipe-hint-right,
 .swipe-hint-left {
   position: absolute; top: 50%; transform: translateY(-50%);
@@ -2001,6 +2268,9 @@ onMounted(async () => {
 
 /* ── Price block ──────────────────────────────────────────── */
 .price-block { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 0.75rem 1rem; }
+.warranty-block { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 0.75rem 1rem; }
+.warranty-summary { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; color: #1e3a8a; }
+.warranty-actions { margin-top: 0.75rem; }
 .lk-price-list { display: flex; flex-direction: column; gap: 0.3rem; }
 .lk-price-row { display: flex; justify-content: space-between; font-size: 0.85rem; padding: 0.2rem 0; border-bottom: 1px solid #dcfce7; }
 .lk-price-total { display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 700; color: #065f46; padding-top: 0.3rem; border-top: 2px solid #86efac; }
