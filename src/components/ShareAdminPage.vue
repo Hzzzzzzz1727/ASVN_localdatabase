@@ -19,7 +19,6 @@ const isAdminUser = ref(false)
 const customer = ref(null)
 const shareRecord = ref(null)
 const customerId = ref(null)
-const theme = ref('light')
 
 const publicUrl = computed(() => shareRecord.value?.publicUrl || '')
 
@@ -158,19 +157,7 @@ const goBackToApp = () => {
   window.location.href = `${getBaseAppUrl()}index.html`
 }
 
-const applyTheme = (nextTheme) => {
-  theme.value = nextTheme === 'dark' ? 'dark' : 'light'
-  document.documentElement.setAttribute('data-share-theme', theme.value)
-}
-
-onMounted(() => {
-  try {
-    applyTheme(localStorage.getItem('app-theme') === 'dark' ? 'dark' : 'light')
-  } catch {
-    applyTheme('light')
-  }
-  boot()
-})
+onMounted(boot)
 </script>
 
 <template>
@@ -275,37 +262,10 @@ onMounted(() => {
 </template>
 
 <style scoped>
-:global(:root) {
-  --share-admin-bg: linear-gradient(180deg, #eef7ff 0%, #f8fafc 100%);
-  --share-admin-text: #0f172a;
-  --share-admin-card: rgba(255, 255, 255, 0.94);
-  --share-admin-border: rgba(148, 163, 184, 0.18);
-  --share-admin-muted: #64748b;
-  --share-admin-soft: #f8fbff;
-  --share-admin-button: #fff;
-  --share-admin-icon-bg: linear-gradient(135deg, #e0ecff, #e8f7ef);
-  --share-admin-icon-text: #2557a7;
-}
-
-:global(:root[data-share-theme='dark']) {
-  --share-admin-bg:
-    radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 28%),
-    radial-gradient(circle at top right, rgba(34, 197, 94, 0.16), transparent 24%),
-    linear-gradient(180deg, #081120 0%, #0f172a 100%);
-  --share-admin-text: #e6eefb;
-  --share-admin-card: rgba(15, 23, 42, 0.88);
-  --share-admin-border: rgba(148, 163, 184, 0.24);
-  --share-admin-muted: #94a3b8;
-  --share-admin-soft: rgba(30, 41, 59, 0.82);
-  --share-admin-button: rgba(15, 23, 42, 0.82);
-  --share-admin-icon-bg: linear-gradient(135deg, rgba(37, 99, 235, 0.22), rgba(16, 185, 129, 0.18));
-  --share-admin-icon-text: #bfdbfe;
-}
-
 :global(body) {
   margin: 0;
-  background: var(--share-admin-bg);
-  color: var(--share-admin-text);
+  background: linear-gradient(180deg, #eef7ff 0%, #f8fafc 100%);
+  color: #0f172a;
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
 }
 
@@ -328,8 +288,8 @@ onMounted(() => {
 
 .admin-hero,
 .panel {
-  background: var(--share-admin-card);
-  border: 1px solid var(--share-admin-border);
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 24px;
   box-shadow: 0 16px 42px rgba(15, 23, 42, 0.08);
 }
@@ -357,7 +317,7 @@ h1 {
 
 .admin-hero p {
   margin: 0;
-  color: var(--share-admin-muted);
+  color: #475569;
   max-width: 620px;
 }
 
@@ -370,11 +330,11 @@ h1 {
 }
 
 .back-button {
-  border: 1px solid var(--share-admin-border);
+  border: 1px solid #cbd5e1;
   border-radius: 999px;
   padding: 10px 14px;
-  background: var(--share-admin-button);
-  color: var(--share-admin-text);
+  background: #fff;
+  color: #0f172a;
   font-weight: 800;
   cursor: pointer;
 }
@@ -440,7 +400,7 @@ h1 {
 
 .info-row span,
 .status-meta {
-  color: var(--share-admin-muted);
+  color: #64748b;
 }
 
 .mini-icon {
@@ -472,12 +432,12 @@ h1 {
   width: 100%;
   min-height: 116px;
   border-radius: 16px;
-  border: 1px solid var(--share-admin-border);
+  border: 1px solid #cbd5e1;
   padding: 14px;
   resize: vertical;
   font-size: 0.95rem;
-  color: var(--share-admin-text);
-  background: var(--share-admin-soft);
+  color: #0f172a;
+  background: #f8fafc;
 }
 
 .action-row {
@@ -550,7 +510,7 @@ button:disabled {
   }
 
   .info-row {
-    background: var(--share-admin-soft);
+    background: #f8fbff;
     border-radius: 16px;
     padding: 12px 14px;
     gap: 8px;
@@ -569,8 +529,8 @@ button:disabled {
     border-radius: 10px;
     align-items: center;
     justify-content: center;
-    background: var(--share-admin-icon-bg);
-    color: var(--share-admin-icon-text);
+    background: linear-gradient(135deg, #e0ecff, #e8f7ef);
+    color: #2557a7;
     font-size: 0.66rem;
     font-weight: 800;
     flex-shrink: 0;
