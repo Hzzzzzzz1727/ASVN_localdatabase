@@ -254,6 +254,8 @@ const detailStatusDraft = ref(0)
 const outsideStatusDraft = ref(0)
 const isMobileControlCollapsed = ref(false)
 const isMobileControlExpanded = ref(false)
+const MOBILE_COLLAPSE_SCROLL_Y = 210
+const MOBILE_EXPAND_SCROLL_Y = 110
 
 const isMobileViewport = () => window.innerWidth <= 768
 const updateMobileControlState = () => {
@@ -262,11 +264,21 @@ const updateMobileControlState = () => {
     isMobileControlExpanded.value = false
     return
   }
-  if (window.scrollY > 140) {
-    isMobileControlCollapsed.value = !isMobileControlExpanded.value
-  } else {
+
+  if (isMobileControlExpanded.value) {
+    if (window.scrollY <= MOBILE_EXPAND_SCROLL_Y) {
+      isMobileControlExpanded.value = false
+    }
+    return
+  }
+
+  if (!isMobileControlCollapsed.value && window.scrollY >= MOBILE_COLLAPSE_SCROLL_Y) {
+    isMobileControlCollapsed.value = true
+    return
+  }
+
+  if (isMobileControlCollapsed.value && window.scrollY <= MOBILE_EXPAND_SCROLL_Y) {
     isMobileControlCollapsed.value = false
-    isMobileControlExpanded.value = false
   }
 }
 const expandMobileControlCard = () => {
@@ -277,7 +289,7 @@ const expandMobileControlCard = () => {
 const collapseMobileControlCard = () => {
   if (!isMobileViewport()) return
   isMobileControlExpanded.value = false
-  updateMobileControlState()
+  isMobileControlCollapsed.value = window.scrollY >= MOBILE_COLLAPSE_SCROLL_Y
 }
 
 // ── EDIT CA ───────────────────────────────────────────────────
