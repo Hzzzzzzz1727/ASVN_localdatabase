@@ -6,6 +6,7 @@ import {
   copyText,
   disableShareRecord,
   ensureShareRecord,
+  getBaseAppUrl,
   loadShareRecordByCustomerId,
 } from '@/lib/shareLinks'
 
@@ -18,8 +19,17 @@ const isAdminUser = ref(false)
 const customer = ref(null)
 const shareRecord = ref(null)
 const customerId = ref(null)
+const theme = ref('light')
 
 const publicUrl = computed(() => shareRecord.value?.publicUrl || '')
+
+const ADMIN_ICONS = {
+  customer: 'Nguoi',
+  phone: 'Goi',
+  model: 'TV',
+  issue: 'Loi',
+  link: 'Link',
+}
 
 const formatDateTime = (value) => {
   if (!value) return ''
@@ -140,7 +150,27 @@ const openPublicPage = () => {
   window.open(buildPublicShareUrl(shareRecord.value.share_token), '_blank', 'noopener')
 }
 
-onMounted(boot)
+const goBackToApp = () => {
+  if (window.history.length > 1) {
+    window.history.back()
+    return
+  }
+  window.location.href = `${getBaseAppUrl()}index.html`
+}
+
+const applyTheme = (nextTheme) => {
+  theme.value = nextTheme === 'dark' ? 'dark' : 'light'
+  document.documentElement.setAttribute('data-share-theme', theme.value)
+}
+
+onMounted(() => {
+  try {
+    applyTheme(localStorage.getItem('app-theme') === 'dark' ? 'dark' : 'light')
+  } catch {
+    applyTheme('light')
+  }
+  boot()
+})
 </script>
 
 <template>
@@ -152,7 +182,10 @@ onMounted(boot)
           <h1>Quan ly link xem cho khach</h1>
           <p>Trang nay chi tao va quan ly duong link doc thong tin cua mot ca duy nhat.</p>
         </div>
-        <div v-if="customer" class="ticket-chip">{{ customer.ticketId }}</div>
+        <div class="hero-actions">
+          <button class="back-button" type="button" @click="goBackToApp">← Quay lại</button>
+          <div v-if="customer" class="ticket-chip">{{ customer.ticketId }}</div>
+        </div>
       </div>
 
       <div v-if="loading" class="panel panel--center">
@@ -173,26 +206,26 @@ onMounted(boot)
           <div class="panel-title">Thong tin ca</div>
           <div class="info-grid">
             <div class="info-row">
-              <span>Khach hang</span>
+              <span><span class="mini-icon">{{ ADMIN_ICONS.customer }}</span>Khach hang</span>
               <strong>{{ customer.name || 'Dang cap nhat' }}</strong>
             </div>
             <div class="info-row">
-              <span>So dien thoai</span>
+              <span><span class="mini-icon">{{ ADMIN_ICONS.phone }}</span>So dien thoai</span>
               <strong>{{ customer.phone || 'Chua co' }}</strong>
             </div>
             <div class="info-row">
-              <span>Model</span>
+              <span><span class="mini-icon">{{ ADMIN_ICONS.model }}</span>Model</span>
               <strong>{{ customer.model || 'Chua co' }}</strong>
             </div>
             <div class="info-row">
-              <span>Tinh trang</span>
+              <span><span class="mini-icon">{{ ADMIN_ICONS.issue }}</span>Tinh trang</span>
               <strong>{{ customer.issue || 'Dang cap nhat' }}</strong>
             </div>
           </div>
         </section>
 
         <section class="panel">
-          <div class="panel-title">Link hien tai</div>
+          <div class="panel-title"><span class="mini-icon mini-icon--title">{{ ADMIN_ICONS.link }}</span>Link hien tai</div>
           <div class="status-row">
             <span :class="['status-tag', shareRecord?.share_enabled === false ? 'status-tag--off' : 'status-tag--on']">
               {{ shareRecord?.share_enabled === false ? 'Da tat' : 'Dang hoat dong' }}
@@ -242,10 +275,37 @@ onMounted(boot)
 </template>
 
 <style scoped>
+:global(:root) {
+  --share-admin-bg: linear-gradient(180deg, #eef7ff 0%, #f8fafc 100%);
+  --share-admin-text: #0f172a;
+  --share-admin-card: rgba(255, 255, 255, 0.94);
+  --share-admin-border: rgba(148, 163, 184, 0.18);
+  --share-admin-muted: #64748b;
+  --share-admin-soft: #f8fbff;
+  --share-admin-button: #fff;
+  --share-admin-icon-bg: linear-gradient(135deg, #e0ecff, #e8f7ef);
+  --share-admin-icon-text: #2557a7;
+}
+
+:global(:root[data-share-theme='dark']) {
+  --share-admin-bg:
+    radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 28%),
+    radial-gradient(circle at top right, rgba(34, 197, 94, 0.16), transparent 24%),
+    linear-gradient(180deg, #081120 0%, #0f172a 100%);
+  --share-admin-text: #e6eefb;
+  --share-admin-card: rgba(15, 23, 42, 0.88);
+  --share-admin-border: rgba(148, 163, 184, 0.24);
+  --share-admin-muted: #94a3b8;
+  --share-admin-soft: rgba(30, 41, 59, 0.82);
+  --share-admin-button: rgba(15, 23, 42, 0.82);
+  --share-admin-icon-bg: linear-gradient(135deg, rgba(37, 99, 235, 0.22), rgba(16, 185, 129, 0.18));
+  --share-admin-icon-text: #bfdbfe;
+}
+
 :global(body) {
   margin: 0;
-  background: linear-gradient(180deg, #eef7ff 0%, #f8fafc 100%);
-  color: #0f172a;
+  background: var(--share-admin-bg);
+  color: var(--share-admin-text);
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
 }
 
@@ -268,8 +328,8 @@ onMounted(boot)
 
 .admin-hero,
 .panel {
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: var(--share-admin-card);
+  border: 1px solid var(--share-admin-border);
   border-radius: 24px;
   box-shadow: 0 16px 42px rgba(15, 23, 42, 0.08);
 }
@@ -297,8 +357,30 @@ h1 {
 
 .admin-hero p {
   margin: 0;
-  color: #475569;
+  color: var(--share-admin-muted);
   max-width: 620px;
+}
+
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.back-button {
+  border: 1px solid var(--share-admin-border);
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: var(--share-admin-button);
+  color: var(--share-admin-text);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.back-button:hover {
+  background: #eff6ff;
 }
 
 .ticket-chip {
@@ -337,6 +419,9 @@ h1 {
   font-size: 1.05rem;
   font-weight: 800;
   margin-bottom: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .info-grid {
@@ -355,7 +440,11 @@ h1 {
 
 .info-row span,
 .status-meta {
-  color: #64748b;
+  color: var(--share-admin-muted);
+}
+
+.mini-icon {
+  display: none;
 }
 
 .status-row {
@@ -383,12 +472,12 @@ h1 {
   width: 100%;
   min-height: 116px;
   border-radius: 16px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--share-admin-border);
   padding: 14px;
   resize: vertical;
   font-size: 0.95rem;
-  color: #0f172a;
-  background: #f8fafc;
+  color: var(--share-admin-text);
+  background: var(--share-admin-soft);
 }
 
 .action-row {
@@ -445,10 +534,53 @@ button:disabled {
     flex-direction: column;
   }
 
+  .hero-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .panel,
   .admin-hero {
     padding: 18px;
     border-radius: 20px;
+  }
+
+  .info-grid {
+    gap: 10px;
+  }
+
+  .info-row {
+    background: var(--share-admin-soft);
+    border-radius: 16px;
+    padding: 12px 14px;
+    gap: 8px;
+  }
+
+  .info-row span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .mini-icon {
+    display: inline-flex;
+    width: 26px;
+    height: 26px;
+    border-radius: 10px;
+    align-items: center;
+    justify-content: center;
+    background: var(--share-admin-icon-bg);
+    color: var(--share-admin-icon-text);
+    font-size: 0.66rem;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+
+  .mini-icon--title {
+    width: 30px;
+    height: 30px;
+    border-radius: 11px;
+    font-size: 0.7rem;
   }
 }
 

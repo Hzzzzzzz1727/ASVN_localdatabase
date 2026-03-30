@@ -11,6 +11,24 @@ const shareUpdatedAt = ref('')
 
 const customer = computed(() => sharePayload.value || null)
 
+const DETAIL_ICONS = {
+  customer: 'Nguoi',
+  phone: 'Goi',
+  model: 'TV',
+  serial: 'SN',
+  issue: 'Loi',
+  part: 'LK',
+  address: 'Dia',
+  created: 'Tao',
+  done: 'Xong',
+  package: 'BH',
+  start: 'BD',
+  expires: 'HH',
+  state: 'TT',
+  price: 'Phi',
+  total: 'Tong',
+}
+
 const STATUS_LABEL = {
   0: 'Dang lam',
   1: 'Cho linh kien',
@@ -81,7 +99,6 @@ onMounted(loadPublicShare)
           <div class="hero-logo">TV</div>
           <div>
             <div class="hero-title">Thong tin ca sua chua</div>
-            <div class="hero-subtitle">Trang chi doc cho khach xem tien do</div>
           </div>
         </div>
         <div class="hero-note">Khong co quyen sua doi du lieu</div>
@@ -110,46 +127,46 @@ onMounted(loadPublicShare)
 
           <div class="detail-grid">
             <div class="detail-row">
-              <span class="detail-label">Khach hang</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.customer }}</span>Khach hang</span>
               <span class="detail-value detail-value--strong">{{ customer.name || 'Dang cap nhat' }}</span>
             </div>
             <div class="detail-row" v-if="customer.phone">
-              <span class="detail-label">So dien thoai</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.phone }}</span>So dien thoai</span>
               <a :href="`tel:${customer.phone}`" class="detail-value detail-link">{{ customer.phone }}</a>
             </div>
             <div class="detail-row" v-if="customer.model">
-              <span class="detail-label">Model</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.model }}</span>Model</span>
               <span class="detail-value">{{ customer.model }}</span>
             </div>
             <div class="detail-row" v-if="customer.serial">
-              <span class="detail-label">Serial</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.serial }}</span>Serial</span>
               <span class="detail-value">{{ customer.serial }}</span>
             </div>
             <div class="detail-row">
-              <span class="detail-label">Tinh trang</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.issue }}</span>Tinh trang</span>
               <span class="detail-value detail-value--danger">{{ customer.issue || 'Dang cap nhat' }}</span>
             </div>
             <div class="detail-row" v-if="customer.replacedPart">
-              <span class="detail-label">Linh kien</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.part }}</span>Linh kien</span>
               <span class="detail-value">{{ customer.replacedPart }}</span>
             </div>
             <div class="detail-row" v-if="customer.address">
-              <span class="detail-label">Dia chi</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.address }}</span>Dia chi</span>
               <span class="detail-value">{{ customer.address }}</span>
             </div>
             <div class="detail-row" v-if="customer.createdAt">
-              <span class="detail-label">Ngay tao</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.created }}</span>Ngay tao</span>
               <span class="detail-value">{{ formatDateTime(customer.createdAt) }}</span>
             </div>
             <div class="detail-row" v-if="customer.doneDate">
-              <span class="detail-label">Ngay hoan thanh</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.done }}</span>Ngay hoan thanh</span>
               <span class="detail-value">{{ customer.doneDate }}</span>
             </div>
           </div>
         </section>
 
         <section v-if="customer.lkItems?.length || customer.price" class="detail-card detail-card--soft">
-          <div class="section-title">Phi sua chua</div>
+          <div class="section-title"><span class="section-icon">{{ DETAIL_ICONS.price }}</span>Phi sua chua</div>
           <div v-if="customer.lkItems?.length" class="price-list">
             <div v-for="(item, index) in customer.lkItems" :key="`${item.name}-${index}`" class="price-row">
               <span>{{ item.name }}</span>
@@ -157,28 +174,28 @@ onMounted(loadPublicShare)
             </div>
           </div>
           <div class="total-row">
-            <span>Tong phi</span>
+            <span><span class="section-icon section-icon--small">{{ DETAIL_ICONS.total }}</span>Tong phi</span>
             <strong>{{ formatPrice(customer.price) }}</strong>
           </div>
         </section>
 
         <section v-if="customer.warranty_label || customer.warranty_expires_at" class="detail-card detail-card--soft">
-          <div class="section-title">Bao hanh</div>
+          <div class="section-title"><span class="section-icon">{{ DETAIL_ICONS.package }}</span>Bao hanh</div>
           <div class="detail-grid">
             <div class="detail-row" v-if="customer.warranty_label">
-              <span class="detail-label">Goi</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.package }}</span>Goi</span>
               <span class="detail-value">{{ customer.warranty_label }}</span>
             </div>
             <div class="detail-row" v-if="customer.warranty_start_at">
-              <span class="detail-label">Bat dau</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.start }}</span>Bat dau</span>
               <span class="detail-value">{{ formatDateTime(customer.warranty_start_at) }}</span>
             </div>
             <div class="detail-row" v-if="customer.warranty_expires_at">
-              <span class="detail-label">Het han</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.expires }}</span>Het han</span>
               <span class="detail-value">{{ formatDateTime(customer.warranty_expires_at) }}</span>
             </div>
             <div class="detail-row" v-if="customer.warranty_remaining_text">
-              <span class="detail-label">Trang thai</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.state }}</span>Trang thai</span>
               <span class="detail-value">{{ customer.warranty_remaining_text }}</span>
             </div>
           </div>
@@ -358,6 +375,9 @@ onMounted(loadPublicShare)
   min-width: 124px;
   color: #5b6b84;
   font-size: 0.92rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .detail-value {
@@ -385,6 +405,14 @@ onMounted(loadPublicShare)
   font-size: 1rem;
   font-weight: 800;
   margin-bottom: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.detail-icon,
+.section-icon {
+  display: none;
 }
 
 .price-row {
@@ -416,6 +444,60 @@ onMounted(loadPublicShare)
 
   .detail-value {
     text-align: left;
+  }
+
+  .detail-row,
+  .price-row,
+  .total-row {
+    border-bottom: none;
+    padding: 12px 14px;
+    background: #f8fbff;
+    border-radius: 16px;
+    gap: 8px;
+  }
+
+  .detail-grid,
+  .price-list {
+    gap: 10px;
+  }
+
+  .detail-label {
+    min-width: 0;
+    font-size: 0.83rem;
+    letter-spacing: 0.01em;
+  }
+
+  .detail-icon,
+  .section-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #e0ecff, #e8f7ef);
+    color: #2557a7;
+    font-size: 0.66rem;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+
+  .section-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 11px;
+    font-size: 0.7rem;
+  }
+
+  .section-icon--small {
+    width: 24px;
+    height: 24px;
+    border-radius: 9px;
+    margin-right: 6px;
+  }
+
+  .section-title {
+    margin-bottom: 12px;
   }
 }
 

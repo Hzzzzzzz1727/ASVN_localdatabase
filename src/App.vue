@@ -256,6 +256,19 @@ const outsideModalTab  = ref('info')
 const detailStatusDraft = ref(0)
 const outsideStatusDraft = ref(0)
 const isMobileControlCollapsed = ref(false)
+const appTheme = ref('light')
+
+const applyAppTheme = (nextTheme) => {
+  appTheme.value = nextTheme === 'dark' ? 'dark' : 'light'
+  document.documentElement.setAttribute('data-app-theme', appTheme.value)
+  try {
+    localStorage.setItem('app-theme', appTheme.value)
+  } catch {}
+}
+
+const toggleAppTheme = () => {
+  applyAppTheme(appTheme.value === 'dark' ? 'light' : 'dark')
+}
 
 const isMobileViewport = () => window.innerWidth <= 768
 const syncMobileControlForViewport = () => {
@@ -1016,6 +1029,12 @@ const openShareManager = (customer) => {
 
 // ── MOUNTED ───────────────────────────────────────────────────
 onMounted(async () => {
+  try {
+    const storedTheme = localStorage.getItem('app-theme')
+    applyAppTheme(storedTheme === 'dark' ? 'dark' : 'light')
+  } catch {
+    applyAppTheme('light')
+  }
   await initAuth()
   if (isLoggedIn.value) {
     await loadData()
@@ -1165,6 +1184,9 @@ onUnmounted(() => {
       </div>
       <div class="topbar-right">
         <span class="topbar-user">{{ userName }}</span>
+        <button @click="toggleAppTheme" class="btn-topbar btn-topbar--theme">
+          <span class="btn-text">{{ appTheme === 'dark' ? 'Nền sáng' : 'Nền tối' }}</span>
+        </button>
         <button @click="openTreModal" class="btn-topbar btn-topbar--alert">
           <span class="btn-text">Ca trễ</span>
           <span v-if="treCaList.length" class="topbar-badge">{{ treCaList.length }}</span>
@@ -2212,6 +2234,7 @@ onUnmounted(() => {
 .btn-topbar:hover { background: rgba(255,255,255,0.2); }
 .btn-topbar--active { background: #3b82f6; border-color: #3b82f6; }
 .btn-topbar--alert { position: relative; }
+.btn-topbar--theme { background: rgba(14,165,233,0.18); border-color: rgba(125,211,252,0.35); }
 .topbar-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 0.3rem; border-radius: 999px; background: #ef4444; color: #fff; font-size: 0.7rem; font-weight: 700; margin-left: 0.35rem; }
 .btn-topbar--logout { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.4); }
 .btn-topbar--logout:hover { background: rgba(239,68,68,0.3); }
@@ -2448,6 +2471,80 @@ onUnmounted(() => {
 .s-green  { color: #065f46; font-weight: 600; }
 @media (max-width: 480px) {
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
-  .stats-row2 { grid-template-columns: 1fr; }
+.stats-row2 { grid-template-columns: 1fr; }
+}
+
+:global(:root[data-app-theme='dark']) body {
+  background: #0f172a;
+}
+
+:global(:root[data-app-theme='dark']) .page-wrap,
+:global(:root[data-app-theme='dark']) .chart-overlay,
+:global(:root[data-app-theme='dark']) .auth-loading {
+  background: linear-gradient(180deg, #081120 0%, #0f172a 100%);
+}
+
+:global(:root[data-app-theme='dark']) .control-card,
+:global(:root[data-app-theme='dark']) .cases-section,
+:global(:root[data-app-theme='dark']) .admin-panel-wrap,
+:global(:root[data-app-theme='dark']) .stats-wrap,
+:global(:root[data-app-theme='dark']) .modal-content,
+:global(:root[data-app-theme='dark']) .panel,
+:global(:root[data-app-theme='dark']) .list-group-item {
+  background: #0f172a;
+  color: #e5eefc;
+  border-color: rgba(148,163,184,0.2) !important;
+}
+
+:global(:root[data-app-theme='dark']) .control-body,
+:global(:root[data-app-theme='dark']) .filter-panel,
+:global(:root[data-app-theme='dark']) .status-editor,
+:global(:root[data-app-theme='dark']) .price-block,
+:global(:root[data-app-theme='dark']) .warranty-block,
+:global(:root[data-app-theme='dark']) .stat-wh,
+:global(:root[data-app-theme='dark']) .card {
+  background: rgba(30, 41, 59, 0.88) !important;
+  color: #e5eefc;
+  border-color: rgba(148,163,184,0.18) !important;
+}
+
+:global(:root[data-app-theme='dark']) .section-title,
+:global(:root[data-app-theme='dark']) .filter-title,
+:global(:root[data-app-theme='dark']) .control-body-title,
+:global(:root[data-app-theme='dark']) .case-customer,
+:global(:root[data-app-theme='dark']) .case-model,
+:global(:root[data-app-theme='dark']) .topbar-appname,
+:global(:root[data-app-theme='dark']) .stat-wh-title {
+  color: #f8fafc !important;
+}
+
+:global(:root[data-app-theme='dark']) .filter-label,
+:global(:root[data-app-theme='dark']) .filter-meta-text,
+:global(:root[data-app-theme='dark']) .control-body-note,
+:global(:root[data-app-theme='dark']) .case-meta,
+:global(:root[data-app-theme='dark']) .case-phone,
+:global(:root[data-app-theme='dark']) .topbar-user,
+:global(:root[data-app-theme='dark']) .log-meta,
+:global(:root[data-app-theme='dark']) .text-muted {
+  color: #94a3b8 !important;
+}
+
+:global(:root[data-app-theme='dark']) .form-control,
+:global(:root[data-app-theme='dark']) .form-select,
+:global(:root[data-app-theme='dark']) .input-group-text {
+  background: #111827;
+  color: #e5eefc;
+  border-color: rgba(148,163,184,0.22);
+}
+
+:global(:root[data-app-theme='dark']) .detail-tab-btn,
+:global(:root[data-app-theme='dark']) .toggle-row button,
+:global(:root[data-app-theme='dark']) .status-toggle-row button,
+:global(:root[data-app-theme='dark']) .control-card-expand,
+:global(:root[data-app-theme='dark']) .control-card-collapse,
+:global(:root[data-app-theme='dark']) .btn-gear {
+  background: rgba(30, 41, 59, 0.88);
+  color: #e5eefc;
+  border-color: rgba(148,163,184,0.22);
 }
 </style>
