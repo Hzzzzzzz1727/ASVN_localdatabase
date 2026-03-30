@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import * as XLSX from 'xlsx'
 import { getSupabase } from './lib/supabase'
 
@@ -252,6 +252,33 @@ const detailModalTab   = ref('info')
 const outsideModalTab  = ref('info')
 const detailStatusDraft = ref(0)
 const outsideStatusDraft = ref(0)
+const isMobileControlCollapsed = ref(false)
+const isMobileControlExpanded = ref(false)
+
+const isMobileViewport = () => window.innerWidth <= 768
+const updateMobileControlState = () => {
+  if (!isMobileViewport()) {
+    isMobileControlCollapsed.value = false
+    isMobileControlExpanded.value = false
+    return
+  }
+  if (window.scrollY > 140) {
+    isMobileControlCollapsed.value = !isMobileControlExpanded.value
+  } else {
+    isMobileControlCollapsed.value = false
+    isMobileControlExpanded.value = false
+  }
+}
+const expandMobileControlCard = () => {
+  if (!isMobileViewport() || !isMobileControlCollapsed.value) return
+  isMobileControlExpanded.value = true
+  isMobileControlCollapsed.value = false
+}
+const collapseMobileControlCard = () => {
+  if (!isMobileViewport()) return
+  isMobileControlExpanded.value = false
+  updateMobileControlState()
+}
 
 // ── EDIT CA ───────────────────────────────────────────────────
 const showEditModal   = ref(false)
@@ -1022,6 +1049,15 @@ onMounted(async () => {
       } catch {}
     }, 200)
   })
+
+  window.addEventListener('scroll', updateMobileControlState, { passive: true })
+  window.addEventListener('resize', updateMobileControlState, { passive: true })
+  updateMobileControlState()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('scroll', updateMobileControlState)
+  window.removeEventListener('resize', updateMobileControlState)
 })
 </script>
 
@@ -1141,7 +1177,10 @@ onMounted(async () => {
     </div>
 
     <div v-show="!showChart" class="layout">
-      <div class="control-card control-card--sticky">
+      <div
+        :class="['control-card', 'control-card--sticky', { 'control-card--mobile-collapsed': isMobileControlCollapsed }]"
+        @click="expandMobileControlCard"
+      >
         <div class="filter-toolbar">
           <div class="filter-summary">
             <div class="filter-title">Danh sách công việc</div>
@@ -1152,7 +1191,7 @@ onMounted(async () => {
           </button>
         </div>
 
-        <div v-if="showFilters" class="filter-panel">
+        <div v-if="showFilters && !isMobileControlCollapsed" class="filter-panel" @click.stop>
           <div class="filter-grid">
             <div class="filter-field">
               <label class="filter-label">Loại ca</label>
@@ -1172,7 +1211,7 @@ onMounted(async () => {
           </div>
         </div>
 
-        <div v-if="currentType !== 'OUTSIDE'" class="status-toggle-row status-toggle-row--sticky">
+        <div v-if="currentType !== 'OUTSIDE'" class="status-toggle-row status-toggle-row--sticky" @click.stop>
           <button @click="showTab = 'danglam'" :class="['btn fw-bold flex-grow-1', showTab==='danglam' ? 'btn-primary text-white' : 'btn-outline-primary']">
             <span class="tab-label">ĐANG LÀM</span> ({{ dangLam.length }})
           </button>
@@ -1185,7 +1224,7 @@ onMounted(async () => {
         </div>
 
         <!-- Tabs Ca Ngoài -->
-        <div v-if="currentType === 'OUTSIDE'" class="status-toggle-row status-toggle-row--sticky">
+        <div v-if="currentType === 'OUTSIDE'" class="status-toggle-row status-toggle-row--sticky" @click.stop>
           <button @click="outsideTab = 'danglam'" :class="['btn fw-bold flex-grow-1', outsideTab==='danglam' ? 'btn-primary text-white' : 'btn-outline-primary']">
             <span class="tab-label">ĐANG LÀM</span> ({{ outsideDangLam.length }})
           </button>
@@ -1198,8 +1237,8 @@ onMounted(async () => {
         </div>
 
         <!-- Control body ASVN / CSVN -->
-        <div v-if="currentType === 'ASVN' || currentType === 'CSVN'">
-          <div v-if="showTab === 'danglam'" class="control-body">
+        <div v-if="(currentType === 'ASVN' || currentType === 'CSVN') && !isMobileControlCollapsed">
+          <div v-if="showTab === 'danglam'" class="control-body" @click.stop>
             <div class="control-actions">
               <button @click="openQuickCreateModal" class="btn btn-primary fw-bold">+ TẠO / DÁN CA</button>
               <button @click="openRouteModal" class="btn btn-info fw-bold">HÀNH TRÌNH</button>
@@ -1207,11 +1246,11 @@ onMounted(async () => {
             </div>
           </div>
 
-          <div v-else-if="showTab === 'cholinkien'" class="control-body">
+          <div v-else-if="showTab === 'cholinkien'" class="control-body" @click.stop>
             <input v-model="searchQuery" type="text" class="form-control" placeholder="Tìm theo tên, SĐT, mã ca, model, serial, linh kiện...">
           </div>
 
-          <div v-else-if="showTab === 'hoanthanh'" class="control-body">
+          <div v-else-if="showTab === 'hoanthanh'" class="control-body" @click.stop>
             <div class="d-flex gap-2 flex-wrap">
               <input type="text" v-model="historySearchQuery" class="form-control flex-grow-1 mb-2"
                 placeholder="Tìm trong lịch sử...">
@@ -1227,7 +1266,7 @@ onMounted(async () => {
         </div>
 
         <!-- Control body Ca Ngoài -->
-        <div v-else-if="currentType === 'OUTSIDE'" class="control-body">
+        <div v-else-if="currentType === 'OUTSIDE' && !isMobileControlCollapsed" class="control-body" @click.stop>
           <div class="control-body-header">
             <div>
               <div class="control-body-title">Ca ngoài</div>
@@ -1237,6 +1276,21 @@ onMounted(async () => {
           </div>
           <input type="text" v-model="searchQuery" class="form-control mt-1" placeholder="Tìm kiếm nhanh...">
         </div>
+
+        <button
+          v-if="isMobileControlCollapsed"
+          @click.stop="expandMobileControlCard"
+          class="control-card-expand"
+        >
+          Mở rộng
+        </button>
+        <button
+          v-if="!isMobileControlCollapsed && isMobileControlExpanded"
+          @click.stop="collapseMobileControlCard"
+          class="control-card-collapse"
+        >
+          Thu gọn
+        </button>
       </div>
 
       <!-- CASES -->
@@ -2120,6 +2174,11 @@ onMounted(async () => {
 .layout { max-width: 1450px; margin: 0 auto; padding: 1.5rem 1rem; display: flex; flex-direction: column; gap: 1.5rem; }
 .control-card, .cases-section { background: #fff; border-radius: 20px; padding: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,.05), 0 2px 4px -1px rgba(0,0,0,.1); border: 1px solid #e2e8f0; }
 .control-card--sticky { position: sticky; top: 64px; z-index: 40; }
+.control-card { transition: padding .22s ease, border-radius .22s ease, box-shadow .22s ease; }
+.control-card-expand,
+.control-card-collapse {
+  display: none;
+}
 .filter-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .filter-summary { min-width: 0; }
 .filter-title { font-size: 1rem; font-weight: 800; color: #0f172a; }
@@ -2223,6 +2282,28 @@ onMounted(async () => {
   .layout { padding: 1rem 0.5rem; gap: 1rem; }
   .control-card, .cases-section { padding: 1rem; border-radius: 16px; }
   .control-card--sticky { top: 56px; }
+  .control-card--mobile-collapsed { padding: 0.7rem 0.85rem; border-radius: 14px; box-shadow: 0 8px 18px rgba(15,23,42,.1); }
+  .control-card--mobile-collapsed .filter-toolbar { margin-bottom: 0.5rem; }
+  .control-card--mobile-collapsed .filter-title { font-size: 0.92rem; }
+  .control-card--mobile-collapsed .filter-meta-text { font-size: 0.78rem; }
+  .control-card--mobile-collapsed .filter-button { padding: 0.45rem 0.7rem; font-size: 0.78rem; }
+  .control-card--mobile-collapsed .status-toggle-row { margin-bottom: 0; }
+  .control-card--mobile-collapsed .status-toggle-row button { min-height: 44px; padding: 0.45rem 0.35rem; }
+  .control-card-expand,
+  .control-card-collapse {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    margin-top: 0.6rem;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    color: #334155;
+    border-radius: 10px;
+    padding: 0.55rem 0.8rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
   .filter-grid { grid-template-columns: 1fr; }
   .toggle-row, .status-toggle-row { gap: 0.5rem; }
   .toggle-row button, .status-toggle-row button { flex: 1; padding: 0.75rem 0.5rem; font-size: 0.85rem; }
