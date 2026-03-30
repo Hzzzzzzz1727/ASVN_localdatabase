@@ -8,6 +8,7 @@ import { useTicketParser } from '@/composables/useTicketParser'
 import { useGeocodingAndRouting } from '@/composables/useGeocodingAndRouting'
 import { useLinhKienManager } from '@/composables/useLinhKienManager'
 import { useAuth } from '@/composables/useAuth'
+import { buildShareAdminUrl, copyText, ensureShareRecord } from '@/lib/shareLinks'
 
 import LoginPage from '@/components/LoginPage.vue'
 import RevenueChart from '@/components/RevenueChart.vue'
@@ -15,6 +16,7 @@ import AdminPanel from '@/components/AdminPanel.vue'
 
 // ── AUTH ──────────────────────────────────────────────────────
 const {
+  currentUser,
   isLoggedIn, isAdmin, isNhanVien, isAuthLoading,
   userName, userWarehouse, canDelete, canExport,
   initAuth, logout
@@ -35,11 +37,12 @@ const { customers, loadData, loadMediaForItem, uploadMediaFiles, removeMediaItem
 
 const ensureSession = async () => {
   const { data: { session } } = await supabase.auth.getSession()
-  if (session) return session
+  const expiresInMs = session?.expires_at ? (session.expires_at * 1000) - Date.now() : 0
+  if (session && expiresInMs > 60 * 1000) return session
 
   const { data, error } = await supabase.auth.refreshSession()
   if (error) throw error
-  return data.session
+  return data.session || session
 }
 const withTimeout = (promise, ms = 5000) =>
   Promise.race([
@@ -864,14 +867,14 @@ const getWarrantyInfo = (item) => {
     expired,
   }
 }
-const saveOutsideWarranty = async (months) => {
-  if (!selectedOutside.value) return
+const saveWarrantyFor = async (itemRef, months) => {
+  if (!itemRef || !itemRef.id) return
   if (!isAdmin.value) {
     showToast('Chỉ admin mới được chỉnh thời gian bảo hành!', 'error')
     return
   }
-  if (selectedOutside.value.status !== 2) {
-    showToast('Chỉ nhập bảo hành khi ca ngoài đã hoàn thành!', 'warning')
+  if (itemRef.status !== 2) {
+    showToast('Chỉ nhập bảo hành khi ca đã hoàn thành!', 'warning')
     return
   }
   const warrantyMonths = Number(months)
@@ -888,10 +891,18 @@ const saveOutsideWarranty = async (months) => {
       warranty_start_at: now.toISOString(),
       warranty_expires_at: expiresAt.toISOString(),
     }
-    const { error } = await supabase.from('customers').update(updates).eq('id', selectedOutside.value.id)
+    const { error } = await supabase.from('customers').update(updates).eq('id', itemRef.id)
     if (error) throw error
-    selectedOutside.value = { ...selectedOutside.value, ...updates }
-    updateLocalCustomer(selectedOutside.value.id, updates)
+    
+    // Cập nhật state current reference
+    if (selectedOutside.value?.id === itemRef.id) {
+      selectedOutside.value = { ...selectedOutside.value, ...updates }
+    }
+    if (selectedCustomer.value?.id === itemRef.id) {
+      selectedCustomer.value = { ...selectedCustomer.value, ...updates }
+    }
+    
+    updateLocalCustomer(itemRef.id, updates)
     showWarrantyOptions.value = false
     showCustomWarrantyInput.value = false
     customWarrantyMonths.value = ''
@@ -900,8 +911,8 @@ const saveOutsideWarranty = async (months) => {
     showToast('Không lưu được bảo hành: ' + (e?.message || 'Unknown error'), 'error')
   }
 }
-const saveCustomOutsideWarranty = async () => {
-  await saveOutsideWarranty(customWarrantyMonths.value)
+const saveCustomWarrantyFor = async (itemRef) => {
+  await saveWarrantyFor(itemRef, customWarrantyMonths.value)
 }
 
 // ── EXPORT (chỉ admin) ────────────────────────────────────────
@@ -923,8 +934,11 @@ const exportHoanThanhByWarehouse = (wh) => exportToExcel(customers.value.filter(
 const exportAllHoanThanh = () => exportToExcel(customers.value.filter(c => c.status === 2 && c.ticketId?.startsWith('ASVN')), 'Bao-Cao-Hoan-Thanh-All')
 
 // ── SWIPE ĐỔI TRẠNG THÁI ──────────────────────────────────────
+const swipeBoundElements = new WeakSet()
 const setupSwipe = (el, item, isOutside = false) => {
   if (!el) return
+  if (swipeBoundElements.has(el)) return
+  swipeBoundElements.add(el)
   let startX = 0, startY = 0, swiping = false
 
   el.addEventListener('touchstart', (e) => {
@@ -976,10 +990,28 @@ const setupSwipe = (el, item, isOutside = false) => {
 }
 
 // ── CHIA SẺ THÔNG TIN CA ──────────────────────────────────────
-const shareCustomer = (customer) => {
-  // Mở trang chia sẻ riêng trong tab mới
-  const url = `${location.origin}${location.pathname.replace(/\/[^/]*$/, '')}/share.html?id=${customer.id}`
-  window.open(url, '_blank')
+const createOrLoadShareLink = async (customer, rotateToken = false) => {
+  if (!customer?.id) throw new Error('Không tìm thấy ca để tạo link')
+  if (!isAdmin.value) throw new Error('Chỉ admin mới được dùng link xem khách')
+  return ensureShareRecord(supabase, customer.id, currentUser.value?.id, rotateToken)
+}
+
+const copyShareLink = async (customer) => {
+  try {
+    const share = await createOrLoadShareLink(customer)
+    await copyText(share.publicUrl)
+    showToast(`Đã copy link xem cho ${customer.ticketId}`, 'success')
+  } catch (e) {
+    showToast('Không tạo được link xem: ' + (e?.message || 'Unknown error'), 'error', 4000)
+  }
+}
+
+const openShareManager = (customer) => {
+  if (!isAdmin.value) {
+    showToast('Chỉ admin mới được quản lý link xem!', 'error')
+    return
+  }
+  window.open(buildShareAdminUrl(customer.id), '_blank', 'noopener')
 }
 
 // ── MOUNTED ───────────────────────────────────────────────────
@@ -1427,7 +1459,7 @@ onUnmounted(() => {
                           <span class="fw-bold text-success">{{ item.ticketId }} - {{ item.name }}</span>
                           <span v-if="item.warehouse" class="badge" :class="getWarehouseBadgeClass(item.warehouse)">{{ getWarehouseLabel(item) }}</span>
                           <div class="d-flex gap-1">
-                            <button @click.stop="shareCustomer(item)" class="btn btn-sm btn-info text-white fw-bold">Chia sẻ</button>
+                            <button v-if="isAdmin" @click.stop="copyShareLink(item)" class="btn btn-sm btn-info text-white fw-bold">Copy link xem</button>
                             <button @click.stop="revertToDangLam(item)" class="btn btn-sm btn-warning">Hoàn lại</button>
                           </div>
                         </div>
@@ -1644,7 +1676,8 @@ onUnmounted(() => {
               </div>
             </div>
             <div class="modal-footer">
-              <button @click="shareCustomer(selectedCustomer)" class="btn btn-info fw-bold text-white">Chia sẻ</button>
+              <button v-if="isAdmin" @click="copyShareLink(selectedCustomer)" class="btn btn-info fw-bold text-white">Copy link xem</button>
+              <button v-if="isAdmin" @click="openShareManager(selectedCustomer)" class="btn btn-outline-info fw-bold">Quản lý link</button>
               <button @click="openEditModal(selectedCustomer, 'asvn')" class="btn btn-warning fw-bold">Sửa ca</button>
               <button v-if="isAdmin" @click="deleteCustomer(selectedCustomer.id)" class="btn btn-danger">Xóa ca</button>
               <button type="button" class="btn btn-secondary" @click="closeDetailModal">Đóng</button>
@@ -1719,14 +1752,14 @@ onUnmounted(() => {
                     </div>
                     <div v-if="showWarrantyOptions" class="warranty-actions">
                       <div class="d-flex gap-2 flex-wrap">
-                        <button @click="saveOutsideWarranty(1)" class="btn btn-outline-primary btn-sm fw-bold">1 tháng</button>
-                        <button @click="saveOutsideWarranty(3)" class="btn btn-outline-primary btn-sm fw-bold">3 tháng</button>
-                        <button @click="saveOutsideWarranty(6)" class="btn btn-outline-primary btn-sm fw-bold">6 tháng</button>
+                        <button @click="saveWarrantyFor(selectedOutside, 1)" class="btn btn-outline-primary btn-sm fw-bold">1 tháng</button>
+                        <button @click="saveWarrantyFor(selectedOutside, 3)" class="btn btn-outline-primary btn-sm fw-bold">3 tháng</button>
+                        <button @click="saveWarrantyFor(selectedOutside, 6)" class="btn btn-outline-primary btn-sm fw-bold">6 tháng</button>
                         <button @click="showCustomWarrantyInput = !showCustomWarrantyInput" class="btn btn-outline-dark btn-sm fw-bold">Tự nhập</button>
                       </div>
                       <div v-if="showCustomWarrantyInput" class="input-group input-group-sm mt-2">
                         <input v-model.number="customWarrantyMonths" type="number" min="1" class="form-control" placeholder="Nhập số tháng bảo hành...">
-                        <button @click="saveCustomOutsideWarranty" class="btn btn-primary fw-bold">Lưu</button>
+                        <button @click="saveCustomWarrantyFor(selectedOutside)" class="btn btn-primary fw-bold">Lưu</button>
                       </div>
                     </div>
                   </div>
@@ -1781,7 +1814,8 @@ onUnmounted(() => {
               </div>
             </div>
             <div class="modal-footer">
-              <button @click="shareCustomer(selectedOutside)" class="btn btn-info fw-bold text-white">Chia sẻ</button>
+              <button v-if="isAdmin" @click="copyShareLink(selectedOutside)" class="btn btn-info fw-bold text-white">Copy link xem</button>
+              <button v-if="isAdmin" @click="openShareManager(selectedOutside)" class="btn btn-outline-info fw-bold">Quản lý link</button>
               <button @click="openEditModal(selectedOutside, 'outside')" class="btn btn-warning fw-bold">Sửa ca</button>
               <button v-if="isAdmin" @click="deleteCustomer(selectedOutside.id)" class="btn btn-danger">Xóa ca</button>
               <button type="button" class="btn btn-secondary" @click="closeOutsideDetailModal">Đóng</button>
