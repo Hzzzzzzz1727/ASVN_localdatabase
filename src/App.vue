@@ -253,43 +253,28 @@ const outsideModalTab  = ref('info')
 const detailStatusDraft = ref(0)
 const outsideStatusDraft = ref(0)
 const isMobileControlCollapsed = ref(false)
-const isMobileControlExpanded = ref(false)
-const MOBILE_COLLAPSE_SCROLL_Y = 210
-const MOBILE_EXPAND_SCROLL_Y = 110
 
 const isMobileViewport = () => window.innerWidth <= 768
-const updateMobileControlState = () => {
+const syncMobileControlForViewport = () => {
   if (!isMobileViewport()) {
-    isMobileControlCollapsed.value = false
-    isMobileControlExpanded.value = false
-    return
-  }
-
-  if (isMobileControlExpanded.value) {
-    if (window.scrollY <= MOBILE_EXPAND_SCROLL_Y) {
-      isMobileControlExpanded.value = false
-    }
-    return
-  }
-
-  if (!isMobileControlCollapsed.value && window.scrollY >= MOBILE_COLLAPSE_SCROLL_Y) {
-    isMobileControlCollapsed.value = true
-    return
-  }
-
-  if (isMobileControlCollapsed.value && window.scrollY <= MOBILE_EXPAND_SCROLL_Y) {
     isMobileControlCollapsed.value = false
   }
 }
 const expandMobileControlCard = () => {
   if (!isMobileViewport() || !isMobileControlCollapsed.value) return
-  isMobileControlExpanded.value = true
   isMobileControlCollapsed.value = false
+}
+const toggleFilterPanel = () => {
+  if (isMobileViewport() && isMobileControlCollapsed.value) {
+    isMobileControlCollapsed.value = false
+    showFilters.value = true
+    return
+  }
+  showFilters.value = !showFilters.value
 }
 const collapseMobileControlCard = () => {
   if (!isMobileViewport()) return
-  isMobileControlExpanded.value = false
-  isMobileControlCollapsed.value = window.scrollY >= MOBILE_COLLAPSE_SCROLL_Y
+  isMobileControlCollapsed.value = true
 }
 
 // ── EDIT CA ───────────────────────────────────────────────────
@@ -742,15 +727,48 @@ const updateLocalMedia = (itemId, media) => {
   if (showOutsideDetailModal.value && selectedOutside.value?.id === itemId)
     selectedOutside.value = { ...selectedOutside.value, media }
 }
+const normalizeMediaForDb = (media) => (media || []).map((m) => {
+  if (!m) return null
+  if (m.source === 'storage' && m.path) {
+    return { type: m.type || 'image', source: 'storage', path: m.path }
+  }
+  if (m.source === 'drive') {
+    return {
+      type: m.type || 'image',
+      source: 'drive',
+      data: m.data,
+      ...(m.original ? { original: m.original } : {})
+    }
+  }
+  if (m.data) {
+    return {
+      type: m.type || 'image',
+      data: m.data,
+      ...(m.source ? { source: m.source } : {})
+    }
+  }
+  return m
+}).filter(Boolean)
 const onFileChange = async (e, item) => {
-  const files = Array.from(e.target.files)
+  const input = e.target
+  const files = Array.from(input?.files || [])
   if (!files.length) return
-  const currentMedia = await loadMediaCached(item.id)
-  // Upload lên Supabase Storage thay vì base64
-  const updated = await uploadMediaFiles(files, item.id, currentMedia)
-  await supabase.from('customers').update({ media: updated }).eq('id', item.id)
-  mediaCache.set(item.id, updated)
-  updateLocalMedia(item.id, updated)
+  try {
+    await ensureSession()
+    const currentMedia = await loadMediaCached(item.id)
+    const updated = await uploadMediaFiles(files, item.id, currentMedia)
+    const mediaForDb = normalizeMediaForDb(updated)
+    const { error } = await supabase.from('customers').update({ media: mediaForDb }).eq('id', item.id)
+    if (error) throw error
+    mediaCache.set(item.id, updated)
+    updateLocalMedia(item.id, updated)
+    showToast('Đã thêm ảnh/video!', 'success')
+  } catch (err) {
+    console.error('[Media Add]', err)
+    showToast('Không thêm được ảnh/video: ' + (err?.message || 'Unknown error'), 'error', 3500)
+  } finally {
+    if (input) input.value = ''
+  }
 }
 const addSingleDrive = async (item) => {
   const inputEl = document.getElementById(`single-drive-${item.id}`)
@@ -1062,14 +1080,12 @@ onMounted(async () => {
     }, 200)
   })
 
-  window.addEventListener('scroll', updateMobileControlState, { passive: true })
-  window.addEventListener('resize', updateMobileControlState, { passive: true })
-  updateMobileControlState()
+  window.addEventListener('resize', syncMobileControlForViewport, { passive: true })
+  syncMobileControlForViewport()
 })
 
 onUnmounted(() => {
-  window.removeEventListener('scroll', updateMobileControlState)
-  window.removeEventListener('resize', updateMobileControlState)
+  window.removeEventListener('resize', syncMobileControlForViewport)
 })
 </script>
 
@@ -1198,7 +1214,7 @@ onUnmounted(() => {
             <div class="filter-title">Danh sách công việc</div>
             <div class="filter-meta-text">{{ currentType }} · {{ currentType === 'OUTSIDE' ? 'Ca ngoài' : (showWarehouse ? currentWarehouse : 'Tất cả kho') }}</div>
           </div>
-          <button @click="showFilters = !showFilters" class="btn btn-outline-secondary fw-bold filter-button">
+          <button @click.stop="toggleFilterPanel" class="btn btn-outline-secondary fw-bold filter-button">
             {{ showFilters ? 'Ẩn bộ lọc' : 'Bộ lọc' }}
           </button>
         </div>
@@ -1297,7 +1313,7 @@ onUnmounted(() => {
           Mở rộng
         </button>
         <button
-          v-if="!isMobileControlCollapsed && isMobileControlExpanded"
+          v-if="!isMobileControlCollapsed"
           @click.stop="collapseMobileControlCard"
           class="control-card-collapse"
         >
