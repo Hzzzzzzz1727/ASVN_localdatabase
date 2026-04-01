@@ -112,7 +112,7 @@ const boot = async () => {
     }
   } catch (err) {
     console.error('[ShareAdminPage]', err)
-    error.value = err?.message || 'Khong mo duoc trang quan ly link.'
+    error.value = err?.message || 'Không mở được trang quản lý link.'
   } finally {
     loading.value = false
   }
@@ -208,11 +208,11 @@ onMounted(boot)
           <div class="panel-title">Thong tin ca</div>
           <div class="info-grid">
             <div class="info-row">
-              <span><span class="mini-icon">{{ ADMIN_ICONS.customer }}</span>Khach hang</span>
-              <strong>{{ customer.name || 'Dang cap nhat' }}</strong>
+              <span><span class="mini-icon">{{ ADMIN_ICONS.customer }}</span>Khách hàng</span>
+              <strong>{{ customer.name || 'Đang cập nhật' }}</strong>
             </div>
             <div class="info-row">
-              <span><span class="mini-icon">{{ ADMIN_ICONS.phone }}</span>So dien thoai</span>
+              <span><span class="mini-icon">{{ ADMIN_ICONS.phone }}</span>Số điện thoại</span>
               <strong>{{ customer.phone || 'Chua co' }}</strong>
             </div>
             <div class="info-row">
@@ -220,8 +220,8 @@ onMounted(boot)
               <strong>{{ customer.model || 'Chua co' }}</strong>
             </div>
             <div class="info-row">
-              <span><span class="mini-icon">{{ ADMIN_ICONS.issue }}</span>Tinh trang</span>
-              <strong>{{ customer.issue || 'Dang cap nhat' }}</strong>
+              <span><span class="mini-icon">{{ ADMIN_ICONS.issue }}</span>Tình trạng</span>
+              <strong>{{ customer.issue || 'Đang cập nhật' }}</strong>
             </div>
           </div>
         </section>
@@ -232,7 +232,7 @@ onMounted(boot)
             <span :class="['status-tag', shareRecord?.share_enabled === false ? 'status-tag--off' : 'status-tag--on']">
               {{ shareRecord?.share_enabled === false ? 'Da tat' : 'Dang hoat dong' }}
             </span>
-            <span class="status-meta" v-if="shareRecord?.updated_at">Cap nhat: {{ formatDateTime(shareRecord.updated_at) }}</span>
+            <span class="status-meta" v-if="shareRecord?.updated_at">Cập nhật: {{ formatDateTime(shareRecord.updated_at) }}</span>
           </div>
 
           <textarea
@@ -267,7 +267,7 @@ onMounted(boot)
 
           <div class="hint-list">
             <p>Link chi mo duoc trang chi doc theo token.</p>
-            <p>Khach khong co nut sua, khong doc bang customers truc tiep neu policy SQL da duoc ap dung.</p>
+            <p>Khách không có nút sửa, không đọc bảng customers trực tiếp nếu policy SQL đã được áp dụng.</p>
             <p>Khi admin cap nhat thong tin ca, snapshot public se theo trigger DB de cap nhat lai.</p>
           </div>
         </section>

@@ -16,8 +16,22 @@ export function useSupabaseCustomers() {
     ...customer,
     statusLog: Array.isArray(customer?.statusLog) ? customer.statusLog : [],
     lkItems: Array.isArray(customer?.lkItems) ? customer.lkItems : [],
-    media: Array.isArray(customer?.media) ? customer.media : [],
+    media: normalizeMediaList(customer?.media),
   })
+
+  const normalizeMediaList = (value) => {
+    if (value === null || value === undefined || value === '') return []
+    if (Array.isArray(value)) return value
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value)
+        return Array.isArray(parsed) ? parsed : (parsed ? [parsed] : [])
+      } catch {
+        return [value]
+      }
+    }
+    return [value]
+  }
 
   const loadCache = () => {
     try {
@@ -196,8 +210,15 @@ export function useSupabaseCustomers() {
       return []
     }
 
-    const raw = Array.isArray(data?.media) ? data.media : []
+    const raw = normalizeMediaList(data?.media)
     return raw.map((mediaItem) => {
+      if (typeof mediaItem === 'string') {
+        return {
+          type: 'image',
+          source: /^https?:\/\//i.test(mediaItem) ? 'storage' : 'local',
+          data: /^https?:\/\//i.test(mediaItem) ? mediaItem : getPublicUrl(mediaItem),
+        }
+      }
       if (mediaItem?.source === 'storage' && mediaItem?.path) {
         return { ...mediaItem, data: getPublicUrl(mediaItem.path) }
       }

@@ -33,9 +33,9 @@ const DETAIL_ICONS = {
 }
 
 const STATUS_LABEL = {
-  0: 'Dang lam',
-  1: 'Cho linh kien',
-  2: 'Hoan thanh',
+  0: 'Đang làm',
+  1: 'Chờ linh kiện',
+  2: 'Hoàn thành',
 }
 
 const parseMaybeJsonDate = (value) => {
@@ -101,7 +101,7 @@ const loadPublicShare = async ({ silent = false } = {}) => {
     const token = params.get('token')?.trim()
 
     if (!token || token.length < 24) {
-      throw new Error('Link xem khong hop le hoac da het han.')
+      throw new Error('Link xem không hợp lệ hoặc đã hết hạn.')
     }
 
     const { data, error: rpcError } = await supabase.rpc('get_public_customer_share', {
@@ -114,7 +114,7 @@ const loadPublicShare = async ({ silent = false } = {}) => {
     const payload = row?.public_payload
 
     if (!payload || typeof payload !== 'object') {
-      throw new Error('Khong tim thay du lieu chia se cho ca nay.')
+      throw new Error('Không tìm thấy dữ liệu chia sẻ cho ca này.')
     }
 
     sharePayload.value = payload
@@ -122,7 +122,7 @@ const loadPublicShare = async ({ silent = false } = {}) => {
   } catch (err) {
     console.error('[SharePage]', err)
     if (!silent || !sharePayload.value) {
-      error.value = err?.message || 'Khong mo duoc link xem nay.'
+      error.value = err?.message || 'Không mở được link xem này.'
     }
   } finally {
     if (!silent || !sharePayload.value) loading.value = false
@@ -152,12 +152,12 @@ onUnmounted(() => {
             <div class="hero-title">THÔNG TIN CA</div>
           </div>
         </div>
-        <div class="hero-note">Khong co quyen sua doi du lieu</div>
+        <div class="hero-note">Không có quyền sửa đổi dữ liệu</div>
       </div>
 
       <div v-if="loading" class="state-card">
         <div class="loader-ring" aria-hidden="true"></div>
-        <p>Dang tai thong tin ca...</p>
+        <p>Đang tải thông tin ca...</p>
       </div>
 
       <div v-else-if="error" class="state-card state-card--error">
@@ -168,21 +168,21 @@ onUnmounted(() => {
         <section class="detail-card">
           <div class="detail-header">
             <div>
-              <div class="ticket-id">{{ customer.ticketId || 'Khong ro ma ca' }}</div>
-              <div class="updated-at" v-if="shareUpdatedAt">Cap nhat: {{ formatDateTime(shareUpdatedAt) }}</div>
+              <div class="ticket-id">{{ customer.ticketId || 'Không rõ mã ca' }}</div>
+              <div class="updated-at" v-if="shareUpdatedAt">Cập nhật: {{ formatDateTime(shareUpdatedAt) }}</div>
             </div>
             <div :class="['status-pill', `status-pill--${customer.status ?? 0}`]">
-              {{ STATUS_LABEL[customer.status ?? 0] || 'Dang cap nhat' }}
+              {{ STATUS_LABEL[customer.status ?? 0] || 'Đang cập nhật' }}
             </div>
           </div>
 
           <div class="detail-grid">
             <div class="detail-row">
-              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.customer }}</span>Khach hang</span>
-              <span class="detail-value detail-value--strong">{{ customer.name || 'Dang cap nhat' }}</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.customer }}</span>Khách hàng</span>
+              <span class="detail-value detail-value--strong">{{ customer.name || 'Đang cập nhật' }}</span>
             </div>
             <div class="detail-row" v-if="customer.phone">
-              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.phone }}</span>So dien thoai</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.phone }}</span>Số điện thoại</span>
               <a :href="`tel:${customer.phone}`" class="detail-value detail-link">{{ customer.phone }}</a>
             </div>
             <div class="detail-row" v-if="customer.model">
@@ -194,27 +194,27 @@ onUnmounted(() => {
               <span class="detail-value">{{ customer.serial }}</span>
             </div>
             <div class="detail-row">
-              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.issue }}</span>Tinh trang</span>
-              <span class="detail-value detail-value--danger">{{ customer.issue || 'Dang cap nhat' }}</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.issue }}</span>Tình trạng</span>
+              <span class="detail-value detail-value--danger">{{ customer.issue || 'Đang cập nhật' }}</span>
             </div>
             <div class="detail-row" v-if="customer.note">
-              <span class="detail-label">Ghi chu</span>
+              <span class="detail-label">Ghi chú</span>
               <span class="detail-value">{{ customer.note }}</span>
             </div>
             <div class="detail-row" v-if="customer.replacedPart">
-              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.part }}</span>Linh kien</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.part }}</span>Linh kiện</span>
               <span class="detail-value">{{ customer.replacedPart }}</span>
             </div>
             <div class="detail-row" v-if="customer.address">
-              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.address }}</span>Dia chi</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.address }}</span>Địa chỉ</span>
               <span class="detail-value">{{ customer.address }}</span>
             </div>
             <div class="detail-row" v-if="customer.createdAt">
-              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.created }}</span>Ngay tao</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.created }}</span>Ngày tạo</span>
               <span class="detail-value">{{ formatDateTime(customer.createdAt) }}</span>
             </div>
             <div class="detail-row" v-if="customer.doneDate">
-              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.done }}</span>Ngay hoan thanh</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.done }}</span>Ngày hoàn thành</span>
               <span class="detail-value">{{ formatDateOnly(customer.doneDate) }}</span>
             </div>
           </div>
@@ -234,7 +234,7 @@ onUnmounted(() => {
         </section>
 
         <section v-if="customer.lkItems?.length || customer.price" class="detail-card detail-card--soft">
-          <div class="section-title"><span class="section-icon">{{ DETAIL_ICONS.price }}</span>Phi sua chua</div>
+          <div class="section-title"><span class="section-icon">{{ DETAIL_ICONS.price }}</span>Phí sửa chữa</div>
           <div v-if="customer.lkItems?.length" class="price-list">
             <div v-for="(item, index) in customer.lkItems" :key="`${item.name}-${index}`" class="price-row">
               <span>{{ item.name }}</span>
@@ -242,28 +242,28 @@ onUnmounted(() => {
             </div>
           </div>
           <div class="total-row">
-            <span><span class="section-icon section-icon--small">{{ DETAIL_ICONS.total }}</span>Tong phi</span>
+            <span><span class="section-icon section-icon--small">{{ DETAIL_ICONS.total }}</span>Tổng phí</span>
             <strong>{{ formatPrice(customer.price) }}</strong>
           </div>
         </section>
 
         <section v-if="customer.warranty_label || customer.warranty_expires_at" class="detail-card detail-card--soft">
-          <div class="section-title"><span class="section-icon">{{ DETAIL_ICONS.package }}</span>Bao hanh</div>
+          <div class="section-title"><span class="section-icon">{{ DETAIL_ICONS.package }}</span>Bảo hành</div>
           <div class="detail-grid">
             <div class="detail-row" v-if="customer.warranty_label">
-              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.package }}</span>Goi</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.package }}</span>Gói</span>
               <span class="detail-value">{{ customer.warranty_label }}</span>
             </div>
             <div class="detail-row" v-if="customer.warranty_start_at">
-              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.start }}</span>Bat dau</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.start }}</span>Bắt đầu</span>
               <span class="detail-value">{{ formatDateTime(customer.warranty_start_at) }}</span>
             </div>
             <div class="detail-row" v-if="customer.warranty_expires_at">
-              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.expires }}</span>Het han</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.expires }}</span>Hết hạn</span>
               <span class="detail-value">{{ formatDateTime(customer.warranty_expires_at) }}</span>
             </div>
             <div class="detail-row" v-if="customer.warranty_remaining_text">
-              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.state }}</span>Trang thai</span>
+              <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.state }}</span>Trạng thái</span>
               <span class="detail-value">{{ customer.warranty_remaining_text }}</span>
             </div>
           </div>
@@ -272,7 +272,7 @@ onUnmounted(() => {
     </div>
 
     <div v-if="activeMedia" class="media-viewer" @click="closeMediaViewer">
-      <button type="button" class="media-viewer-close" @click.stop="closeMediaViewer">Dong</button>
+      <button type="button" class="media-viewer-close" @click.stop="closeMediaViewer">Đóng</button>
       <div class="media-viewer-inner" @click.stop>
         <video
           v-if="activeMedia.type === 'video'"
@@ -285,7 +285,7 @@ onUnmounted(() => {
         <img
           v-else
           :src="activeMedia.data"
-          alt="Anh sua chua phong to"
+          alt="Ảnh sửa chữa phóng to"
           class="media-viewer-content"
         >
         <a
@@ -296,7 +296,7 @@ onUnmounted(() => {
           rel="noopener noreferrer"
           download
         >
-          Tai xuong
+          Tải xuống
         </a>
       </div>
     </div>

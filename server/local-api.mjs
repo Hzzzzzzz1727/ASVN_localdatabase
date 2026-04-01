@@ -204,6 +204,13 @@ function normalizeJsonValue(value) {
   return value
 }
 
+function normalizeMediaList(value) {
+  const normalized = normalizeJsonValue(value)
+  if (Array.isArray(normalized)) return normalized
+  if (normalized === null || normalized === undefined || normalized === '') return []
+  return [normalized]
+}
+
 function getRequestBaseUrl(req) {
   if (!req) return ''
   return `${req.protocol}://${req.get('host')}`
@@ -217,9 +224,17 @@ function buildStoredMediaUrl(storedPath, baseUrl = '', bucket = 'media') {
 }
 
 function buildPublicMediaItems(customer, baseUrl = '') {
-  const rawMedia = normalizeJsonValue(customer?.media)
+  const rawMedia = normalizeMediaList(customer?.media)
   return rawMedia.map((mediaItem) => {
     if (!mediaItem) return null
+
+    if (typeof mediaItem === 'string') {
+      return {
+        type: 'image',
+        source: /^https?:\/\//i.test(mediaItem) ? 'storage' : 'local',
+        data: /^https?:\/\//i.test(mediaItem) ? mediaItem : buildStoredMediaUrl(mediaItem, baseUrl, 'media'),
+      }
+    }
 
     if (mediaItem?.source === 'storage' && mediaItem?.path) {
       return {
@@ -243,6 +258,15 @@ function buildPublicMediaItems(customer, baseUrl = '') {
         type: mediaItem.type || 'image',
         source: mediaItem.source || 'local',
         data: mediaItem.data,
+      }
+    }
+
+    if (mediaItem?.path) {
+      return {
+        type: mediaItem.type || 'image',
+        source: mediaItem.source || 'storage',
+        path: mediaItem.path,
+        data: buildStoredMediaUrl(mediaItem.path, baseUrl, 'media'),
       }
     }
 
@@ -276,10 +300,10 @@ function buildCustomerSharePayload(customer, options = {}) {
     status: customer.status ?? 0,
     doneDate: customer.doneDate,
     createdAt: customer.createdAt,
-    warranty_label: customer.warranty_months > 0 ? `Bao hanh ${customer.warranty_months} thang` : null,
+    warranty_label: customer.warranty_months > 0 ? `Bảo hành ${customer.warranty_months} tháng` : null,
     warranty_start_at: customer.warranty_start_at,
     warranty_expires_at: customer.warranty_expires_at,
-    warranty_remaining_text: !expiresAt ? null : expiresAt < now ? 'Het bao hanh' : 'Con hieu luc',
+    warranty_remaining_text: !expiresAt ? null : expiresAt < now ? 'Hết bảo hành' : 'Còn hiệu lực',
   }
 }
 
