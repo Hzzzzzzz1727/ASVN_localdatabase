@@ -259,6 +259,27 @@ const isStatusActionLoading = ref(false)
 const isMobileControlCollapsed = ref(false)
 
 const isMobileViewport = () => window.innerWidth <= 768
+const assignedWarehouse = computed(() => {
+  const warehouse = typeof userWarehouse.value === 'string'
+    ? userWarehouse.value.trim().toUpperCase()
+    : ''
+  return warehouse || null
+})
+const hasLockedWarehouse = computed(() => isNhanVien.value && !!assignedWarehouse.value)
+const availableWarehouses = computed(() => hasLockedWarehouse.value ? [assignedWarehouse.value] : ['TDP', 'NV'])
+const syncWarehouseByRole = () => {
+  if (hasLockedWarehouse.value) {
+    currentWarehouse.value = assignedWarehouse.value
+    showWarehouse.value = true
+    return
+  }
+  if (!availableWarehouses.value.includes(currentWarehouse.value)) {
+    currentWarehouse.value = 'TDP'
+  }
+}
+watch([isNhanVien, assignedWarehouse], () => {
+  syncWarehouseByRole()
+}, { immediate: true })
 const syncMobileControlForViewport = () => {
   if (!isMobileViewport()) {
     isMobileControlCollapsed.value = false
@@ -495,13 +516,20 @@ const closeMediaModal = () => { showModal.value = false; modalMedia.value = null
 // ── NAVIGATION ────────────────────────────────────────────────
 const backToTypeToggle = () => { showWarehouse.value = false; currentType.value = 'ASVN' }
 const selectWarehouse  = (wh) => {
-  if (isNhanVien.value && userWarehouse.value && wh !== userWarehouse.value) return
+  if (hasLockedWarehouse.value) {
+    currentWarehouse.value = assignedWarehouse.value
+    searchQuery.value = ''
+    return
+  }
   currentWarehouse.value = wh; searchQuery.value = ''
 }
 const selectType = (type) => {
   currentType.value = type; showTab.value = 'danglam'; outsideTab.value = 'danglam'
   searchQuery.value = ''; historySearchQuery.value = ''
-  if (type === 'ASVN') showWarehouse.value = true
+  if (type === 'ASVN') {
+    showWarehouse.value = true
+    syncWarehouseByRole()
+  }
 }
 
 // ── THỐNG KÊ ─────────────────────────────────────────────────
@@ -535,8 +563,13 @@ const filteredCustomers = computed(() => {
   if (currentType.value === 'ASVN')         f = f.filter(c => c.ticketId?.startsWith('ASVN'))
   else if (currentType.value === 'CSVN')    f = f.filter(c => c.ticketId?.startsWith('CSVN'))
   else if (currentType.value === 'OUTSIDE') f = f.filter(c => c.ticketId?.startsWith('NGOAI'))
-  if (currentType.value === 'ASVN' && showWarehouse.value && !searchQuery.value)
-    f = f.filter(c => c.warehouse === currentWarehouse.value)
+  if (currentType.value === 'ASVN') {
+    if (hasLockedWarehouse.value) {
+      f = f.filter(c => c.warehouse === assignedWarehouse.value)
+    } else if (showWarehouse.value && !searchQuery.value) {
+      f = f.filter(c => c.warehouse === currentWarehouse.value)
+    }
+  }
   const q = searchQuery.value.toLowerCase()
   if (!q) return f
   return f.filter(c =>
@@ -1059,12 +1092,12 @@ onMounted(async () => {
   await initAuth()
   if (isLoggedIn.value) {
     await loadData()
-    currentWarehouse.value = (isNhanVien.value && userWarehouse.value) ? userWarehouse.value : 'TDP'
+    syncWarehouseByRole()
   }
   watch(isLoggedIn, async (val) => {
     if (val) {
       await loadData()
-      currentWarehouse.value = (isNhanVien.value && userWarehouse.value) ? userWarehouse.value : 'TDP'
+      syncWarehouseByRole()
     }
   })
 
@@ -1303,9 +1336,15 @@ onUnmounted(() => {
             </div>
             <div v-if="currentType === 'ASVN'" class="filter-field">
               <label class="filter-label">Kho</label>
-              <select v-model="currentWarehouse" class="form-select" @change="selectWarehouse(currentWarehouse)">
-                <option value="TDP">Kho TDP</option>
-                <option value="NV">Kho NV</option>
+              <select
+                v-model="currentWarehouse"
+                class="form-select"
+                :disabled="hasLockedWarehouse"
+                @change="selectWarehouse(currentWarehouse)"
+              >
+                <option v-for="wh in availableWarehouses" :key="wh" :value="wh">
+                  {{ wh === 'TDP' ? 'Kho TDP' : 'Kho NV' }}
+                </option>
               </select>
             </div>
           </div>

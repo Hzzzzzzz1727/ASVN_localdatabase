@@ -498,6 +498,120 @@ async function loadProfileById(pool, id) {
   return row ? rowToObject('profiles', row) : null
 }
 
+function normalizedWarehouse(value) {
+  const warehouse = typeof value === 'string' ? value.trim().toUpperCase() : ''
+  return warehouse || null
+}
+
+function isAdminProfile(profile) {
+  return String(profile?.role || '').trim().toLowerCase() === 'admin'
+}
+
+function isAsvnCustomer(customer) {
+  return String(customer?.ticketId || '').toUpperCase().startsWith('ASVN')
+}
+
+function canAccessCustomer(profile, customer) {
+  if (!profile) return false
+  if (isAdminProfile(profile)) return true
+
+  const lockedWarehouse = normalizedWarehouse(profile.warehouse)
+  if (!lockedWarehouse) return true
+  if (!isAsvnCustomer(customer)) return true
+  return normalizedWarehouse(customer?.warehouse) === lockedWarehouse
+}
+
+function sanitizeProfileMutation(profile, values = {}) {
+  if (isAdminProfile(profile)) return { ...values }
+
+  const nextValues = { ...values }
+  delete nextValues.role
+  delete nextValues.warehouse
+  delete nextValues.is_active
+  delete nextValues.account_status
+  delete nextValues.approval_note
+  delete nextValues.approved_by
+  delete nextValues.approved_at
+  return nextValues
+}
+
+async function resolveRowsByFilters(pool, tableName, filters = [], columns = '*') {
+  return executeSelect(pool, tableName, {
+    columns,
+    filters,
+  })
+}
+
+async function authorizeDbRequest(pool, req, tableName, action, payload = {}) {
+  const profile = req.session?.profile
+  if (!profile) {
+    throw new Error('Vui long dang nhap de tiep tuc.')
+  }
+
+  if (isAdminProfile(profile)) return payload
+
+  if (tableName === 'profiles') {
+    if (action === 'select') {
+      return {
+        ...payload,
+        filters: [...(payload.filters || []), { type: 'eq', column: 'id', value: profile.id }],
+      }
+    }
+
+    if (action === 'update') {
+      return {
+        ...payload,
+        values: sanitizeProfileMutation(profile, payload.values || {}),
+        filters: [...(payload.filters || []), { type: 'eq', column: 'id', value: profile.id }],
+      }
+    }
+
+    throw new Error('Ban khong co quyen thuc hien thao tac voi profiles.')
+  }
+
+  if (tableName !== 'customers') {
+    throw new Error('Ban khong co quyen thuc hien thao tac nay.')
+  }
+
+  if (action === 'select') {
+    return payload
+  }
+
+  if (action === 'insert') {
+    const rows = Array.isArray(payload.values) ? payload.values : []
+    if (!rows.every((row) => canAccessCustomer(profile, row))) {
+      throw new Error('Ban khong duoc tao ca cho kho khac.')
+    }
+    return payload
+  }
+
+  if (action === 'upsert') {
+    throw new Error('Ban khong co quyen thuc hien thao tac nay.')
+  }
+
+  const targetRows = await resolveRowsByFilters(pool, tableName, payload.filters || [], '*')
+  if (!targetRows.every((row) => canAccessCustomer(profile, row))) {
+    throw new Error('Ban khong duoc phep truy cap ca cua kho khac.')
+  }
+
+  if (action === 'update') {
+    const nextWarehouse = Object.prototype.hasOwnProperty.call(payload.values || {}, 'warehouse')
+      ? normalizedWarehouse(payload.values?.warehouse)
+      : null
+    const lockedWarehouse = normalizedWarehouse(profile.warehouse)
+    if (lockedWarehouse && nextWarehouse && nextWarehouse !== lockedWarehouse) {
+      throw new Error('Ban khong duoc chuyen ca sang kho khac.')
+    }
+    return payload
+  }
+
+  if (action === 'delete') {
+    return payload
+  }
+
+  throw new Error('Ban khong co quyen thuc hien thao tac nay.')
+}
+
 async function getNextBigIntId(pool, tableName) {
   const primaryKey = getSchema(tableName).primaryKey
   const result = await pool.request().query(`
@@ -1084,28 +1198,32 @@ app.post('/api/db/:tableName', async (req, res) => {
     const { tableName } = req.params
     const action = req.body?.action || 'select'
     const pool = await getPool()
+    const authorizedPayload = await authorizeDbRequest(pool, req, tableName, action, req.body || {})
     let data = null
 
     if (action === 'select') {
-      data = await executeSelect(pool, tableName, req.body)
+      data = await executeSelect(pool, tableName, authorizedPayload)
+      if (tableName === 'customers' && !isAdminProfile(req.session?.profile)) {
+        data = data.filter((row) => canAccessCustomer(req.session?.profile, row))
+      }
     } else if (action === 'insert') {
-      data = await executeInsert(pool, tableName, req.body)
+      data = await executeInsert(pool, tableName, authorizedPayload)
       if (tableName === 'customers') {
-        for (const row of req.body.values || []) {
+        for (const row of authorizedPayload.values || []) {
           if (row?.id) await syncSharePayloadForCustomer(pool, row.id)
         }
       }
     } else if (action === 'update') {
-      data = await executeUpdate(pool, tableName, req.body)
+      data = await executeUpdate(pool, tableName, authorizedPayload)
       if (tableName === 'customers') {
         for (const row of data) {
           if (row?.id) await syncSharePayloadForCustomer(pool, row.id)
         }
       }
     } else if (action === 'delete') {
-      data = await executeDelete(pool, tableName, req.body)
+      data = await executeDelete(pool, tableName, authorizedPayload)
     } else if (action === 'upsert') {
-      data = await executeUpsert(pool, tableName, req.body)
+      data = await executeUpsert(pool, tableName, authorizedPayload)
       if (tableName === 'customer_share_links') {
         for (const row of data) {
           const customers = await executeSelect(pool, 'customers', {
@@ -1128,12 +1246,12 @@ app.post('/api/db/:tableName', async (req, res) => {
       throw new Error(`Action khong ho tro: ${action}`)
     }
 
-    if (req.body.single) {
+    if (authorizedPayload.single) {
       if (!data[0]) throw new Error('Khong tim thay ban ghi.')
       res.json({ data: data[0], error: null })
       return
     }
-    if (req.body.maybeSingle) {
+    if (authorizedPayload.maybeSingle) {
       res.json({ data: data[0] || null, error: null })
       return
     }
