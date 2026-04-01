@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://incorporated-mood-nurse-var.trycloudflare.com/api/:match*"
+      "destination": "https://biblical-fwd-expected-amplifier.trycloudflare.com/api/:match*"
     },
     {
       "source": "/media/(.*)",
-      "destination": "https://incorporated-mood-nurse-var.trycloudflare.com/media/$1"
+      "destination": "https://biblical-fwd-expected-amplifier.trycloudflare.com/media/$1"
     }
   ]
 }
