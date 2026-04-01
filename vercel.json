@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://finder-government-around-longest.trycloudflare.com/api/:match*"
+      "destination": "https://forming-kelly-muze-excluded.trycloudflare.com/api/:match*"
     },
     {
       "source": "/media/(.*)",
-      "destination": "https://finder-government-around-longest.trycloudflare.com/media/$1"
+      "destination": "https://forming-kelly-muze-excluded.trycloudflare.com/media/$1"
     }
   ]
 }
