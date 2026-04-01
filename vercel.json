@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://strict-nsw-healthy-mrna.trycloudflare.com/api/:match*"
+      "destination": "https://finder-government-around-longest.trycloudflare.com/api/:match*"
     },
     {
       "source": "/media/(.*)",
-      "destination": "https://strict-nsw-healthy-mrna.trycloudflare.com/media/$1"
+      "destination": "https://finder-government-around-longest.trycloudflare.com/media/$1"
     }
   ]
 }
