@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://priority-pension-scheme-did.trycloudflare.com/api/:match*"
+      "destination": "https://episodes-exercises-disciplines-based.trycloudflare.com/api/:match*"
     },
     {
       "source": "/media/(.*)",
-      "destination": "https://priority-pension-scheme-did.trycloudflare.com/media/$1"
+      "destination": "https://episodes-exercises-disciplines-based.trycloudflare.com/media/$1"
     }
   ]
 }
