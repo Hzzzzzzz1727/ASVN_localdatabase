@@ -1760,7 +1760,7 @@ onUnmounted(() => {
                   <div class="media-grid">
                     <div v-for="(m, idx) in selectedCustomer.media || []" :key="idx" class="media-item position-relative">
                       <img v-if="m.type!=='video'" :src="m.data" @click="openMediaModal(m)" alt="Ảnh" style="cursor:pointer;" loading="lazy">
-                      <video v-else :src="m.data" controls preload="metadata" @click="openMediaModal(m)" style="cursor:pointer;"></video>
+                      <video v-else :src="m.data" preload="metadata" playsinline muted @click="openMediaModal(m)" style="cursor:pointer;"></video>
                       <span @click.stop="removeMedia(selectedCustomer, idx)" class="media-del">×</span>
                     </div>
                     <label class="media-add">
@@ -1907,7 +1907,7 @@ onUnmounted(() => {
                   <div class="media-grid">
                     <div v-for="(m, idx) in selectedOutside.media || []" :key="idx" class="media-item position-relative">
                       <img v-if="m.type!=='video'" :src="m.data" @click="openMediaModal(m)" alt="Ảnh" style="cursor:pointer;" loading="lazy">
-                      <video v-else :src="m.data" controls preload="metadata" @click="openMediaModal(m)" style="cursor:pointer;"></video>
+                      <video v-else :src="m.data" preload="metadata" playsinline muted @click="openMediaModal(m)" style="cursor:pointer;"></video>
                       <span @click.stop="removeMedia(selectedOutside, idx)" class="media-del">×</span>
                     </div>
                     <label class="media-add">
@@ -2001,11 +2001,22 @@ onUnmounted(() => {
       </div>
 
       <!-- ══ MODAL PHÓNG TO MEDIA ══ -->
-      <div v-if="showModal" class="media-modal-overlay" @click="closeMediaModal">
-        <div class="media-modal-content" @click.stop>
-          <button class="modal-close" @click="closeMediaModal">×</button>
-          <img v-if="modalMedia?.type!=='video'" :src="modalMedia.data" alt="Ảnh phóng to" class="modal-media">
-          <video v-else :src="modalMedia.data" controls autoplay class="modal-media"></video>
+      <div v-if="showModal" class="media-viewer" @click="closeMediaModal">
+        <div class="media-viewer-inner" @click.stop>
+          <button type="button" class="media-viewer-close" @click.stop="closeMediaModal">Đóng</button>
+          <img v-if="modalMedia?.type!=='video'" :src="modalMedia.data" alt="Ảnh phóng to" class="media-viewer-content">
+          <video v-else :src="modalMedia.data" controls autoplay playsinline class="media-viewer-content"></video>
+          <a
+            v-if="modalMedia?.data"
+            class="media-viewer-download"
+            :href="modalMedia.data"
+            target="_blank"
+            rel="noopener noreferrer"
+            download
+            @click.stop
+          >
+            Tải xuống
+          </a>
         </div>
       </div>
 
@@ -2416,11 +2427,60 @@ onUnmounted(() => {
 .date-pill { background: linear-gradient(135deg, #10b981, #059669); color: #fff; padding: 0.5rem 1rem; border-radius: 20px; font-weight: 600; font-size: 0.9rem; }
 
 /* ── Media modal ──────────────────────────────────────────── */
-.media-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.9); display: flex; align-items: center; justify-content: center; z-index: 9000; cursor: pointer; }
-.media-modal-content { position: relative; max-width: 95vw; max-height: 95vh; background: #000; border-radius: 12px; overflow: hidden; }
-.modal-media { max-width: 100%; max-height: 95vh; object-fit: contain; display: block; }
-.modal-close { position: absolute; top: 15px; right: 15px; background: rgba(0,0,0,.5); color: #fff; border: none; font-size: 28px; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; z-index: 10; }
-.modal-close:hover { background: rgba(255,0,0,.8); }
+.media-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(2, 6, 23, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.media-viewer-inner {
+  position: relative;
+  width: min(100%, 980px);
+  max-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.media-viewer-content {
+  display: block;
+  max-width: 100%;
+  max-height: 82vh;
+  border-radius: 22px;
+  background: #0f172a;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.35);
+}
+
+.media-viewer-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.media-viewer-download {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #fff;
+  text-decoration: none;
+  font-weight: 700;
+}
 
 /* ── Misc ─────────────────────────────────────────────────── */
 .modal-xl { max-width: 1100px; }
@@ -2444,6 +2504,10 @@ onUnmounted(() => {
   .tab-label { display: none; }
   .status-toggle-row button { font-size: 0.85rem; padding: 0.6rem 0.4rem; }
   .modal-dialog { margin: 0.5rem; max-width: calc(100% - 1rem); }
+  .media-viewer { padding: 16px 10px 76px; }
+  .media-viewer-content { max-height: 72vh; border-radius: 16px; }
+  .media-viewer-close { top: 12px; right: 12px; padding: 8px 12px; }
+  .media-viewer-download { right: 12px; bottom: 12px; left: 12px; text-align: center; }
 }
 @media (max-width: 768px) {
   .layout { padding: 1rem 0.5rem; gap: 1rem; }
