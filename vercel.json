@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://receiving-tribute-caution-backgrounds.trycloudflare.com/api/:match*"
+      "destination": "https://joyce-cigarette-replica-sharing.trycloudflare.com/api/:match*"
     },
     {
       "source": "/media/(.*)",
-      "destination": "https://receiving-tribute-caution-backgrounds.trycloudflare.com/media/$1"
+      "destination": "https://joyce-cigarette-replica-sharing.trycloudflare.com/media/$1"
     }
   ]
 }

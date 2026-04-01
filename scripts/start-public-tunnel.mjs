@@ -107,9 +107,10 @@ async function updateVercelJson(baseUrl) {
 
 function runGit(args) {
   return new Promise((resolve, reject) => {
-    const child = spawnLogged('git', args, {
+    const child = spawn('git', args, {
       cwd: repoRoot,
       stdio: 'inherit',
+      shell: false,
     })
 
     child.on('exit', (code) => {
