@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://forming-kelly-muze-excluded.trycloudflare.com/api/:match*"
+      "destination": "https://mozilla-lap-writing-ferrari.trycloudflare.com/api/:match*"
     },
     {
       "source": "/media/(.*)",
-      "destination": "https://forming-kelly-muze-excluded.trycloudflare.com/media/$1"
+      "destination": "https://mozilla-lap-writing-ferrari.trycloudflare.com/media/$1"
     }
   ]
 }
