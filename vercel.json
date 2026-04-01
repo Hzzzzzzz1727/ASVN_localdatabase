@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://mozilla-lap-writing-ferrari.trycloudflare.com/api/:match*"
+      "destination": "https://knows-greene-veteran-bold.trycloudflare.com/api/:match*"
     },
     {
       "source": "/media/(.*)",
-      "destination": "https://mozilla-lap-writing-ferrari.trycloudflare.com/media/$1"
+      "destination": "https://knows-greene-veteran-bold.trycloudflare.com/media/$1"
     }
   ]
 }
