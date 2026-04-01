@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://portion-mambo-disc-plastics.trycloudflare.com/api/:match*"
+      "destination": "https://priority-pension-scheme-did.trycloudflare.com/api/:match*"
     },
     {
       "source": "/media/(.*)",
-      "destination": "https://portion-mambo-disc-plastics.trycloudflare.com/media/$1"
+      "destination": "https://priority-pension-scheme-did.trycloudflare.com/media/$1"
     }
   ]
 }
