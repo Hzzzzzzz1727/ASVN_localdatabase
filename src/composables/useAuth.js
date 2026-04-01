@@ -14,6 +14,8 @@ const normalizeProfile = (profile) => {
   return {
     ...profile,
     is_active: profile.is_active !== false,
+    account_status: profile.account_status || 'approved',
+    approval_note: profile.approval_note || '',
   }
 }
 
@@ -96,6 +98,12 @@ export const useAuth = () => {
     return data
   }
 
+  const register = async ({ email, password, fullName, phone }) => {
+    const { data, error } = await supabase.auth.register({ email, password, fullName, phone })
+    if (error) throw error
+    return data
+  }
+
   const logout = async () => {
     try {
       await Promise.race([
@@ -109,7 +117,7 @@ export const useAuth = () => {
     lockMessage.value = ''
   }
 
-  const createNhanVien = async ({ email, password, fullName, warehouse }) => {
+  const createNhanVien = async ({ email, password, fullName, warehouse, phone = null }) => {
     isBypassingAuthChange.value = true
     try {
       const { data: { session: adminSession } } = await supabase.auth.getSession()
@@ -120,6 +128,7 @@ export const useAuth = () => {
         options: {
           data: {
             full_name: fullName,
+            phone,
             role: 'nhanvien',
             warehouse: warehouse || null,
           },
@@ -145,6 +154,12 @@ export const useAuth = () => {
         currentUser.value = session.user
       }
     }
+  }
+
+  const reviewRegistration = async ({ id, approved, note }) => {
+    const { data, error } = await supabase.auth.reviewRegistration({ id, approved, note })
+    if (error) throw error
+    return normalizeProfile(data?.profile)
   }
 
   const getAllProfiles = async () => {
@@ -195,9 +210,11 @@ export const useAuth = () => {
     canManageUsers,
     initAuth,
     login,
+    register,
     logout,
     createNhanVien,
     getAllProfiles,
+    reviewRegistration,
     toggleUserActive,
     deleteUser,
     updateProfile,

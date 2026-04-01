@@ -298,6 +298,30 @@ const createAuthApi = () => ({
     }
   },
 
+  async register({ email, password, fullName, phone }) {
+    try {
+      const payload = await requestJson(`${API_BASE}/auth/register`, {
+        method: 'POST',
+        body: JSON.stringify({ email, password, fullName, phone }),
+      })
+      return { data: payload.data, error: null }
+    } catch (error) {
+      return { data: null, error: { message: error.message || 'Khong dang ky duoc tai khoan local.' } }
+    }
+  },
+
+  async reviewRegistration({ id, approved, note }) {
+    try {
+      const payload = await requestJson(`${API_BASE}/auth/registrations/${id}/review`, {
+        method: 'POST',
+        body: JSON.stringify({ approved, note }),
+      })
+      return { data: payload.data, error: null }
+    } catch (error) {
+      return { data: null, error: { message: error.message || 'Khong xu ly duoc dang ky.' } }
+    }
+  },
+
   async setSession(session) {
     if (!session?.access_token) {
       writeAuthState(null)

@@ -69,10 +69,15 @@ const tableSchemas = {
     columns: {
       id: 'uuid',
       email: 'nvarchar',
+      phone: 'nvarchar',
       full_name: 'nvarchar',
       role: 'nvarchar',
       warehouse: 'nvarchar',
       is_active: 'bit',
+      account_status: 'nvarchar',
+      approval_note: 'nvarchar',
+      approved_by: 'uuid',
+      approved_at: 'datetime2',
       created_at: 'datetime2',
       updated_at: 'datetime2',
     },
@@ -373,9 +378,43 @@ function applyFilterClauses({ tableName, filters = [], request, startingIndex = 
 
 async function ensureSchema(pool) {
   await pool.request().query(`
+    IF COL_LENGTH('dbo.profiles', 'phone') IS NULL
+    BEGIN
+      ALTER TABLE dbo.profiles
+      ADD [phone] NVARCHAR(50) NULL;
+    END
+
+    IF COL_LENGTH('dbo.profiles', 'account_status') IS NULL
+    BEGIN
+      ALTER TABLE dbo.profiles
+      ADD [account_status] NVARCHAR(50) NULL;
+    END
+
+    IF COL_LENGTH('dbo.profiles', 'approval_note') IS NULL
+    BEGIN
+      ALTER TABLE dbo.profiles
+      ADD [approval_note] NVARCHAR(500) NULL;
+    END
+
+    IF COL_LENGTH('dbo.profiles', 'approved_by') IS NULL
+    BEGIN
+      ALTER TABLE dbo.profiles
+      ADD [approved_by] UNIQUEIDENTIFIER NULL;
+    END
+
+    IF COL_LENGTH('dbo.profiles', 'approved_at') IS NULL
+    BEGIN
+      ALTER TABLE dbo.profiles
+      ADD [approved_at] DATETIME2 NULL;
+    END
+
     UPDATE dbo.profiles
     SET is_active = 1
     WHERE is_active IS NULL;
+
+    UPDATE dbo.profiles
+    SET account_status = 'approved'
+    WHERE account_status IS NULL;
 
     IF COL_LENGTH('dbo.customers', 'note') IS NULL
     BEGIN
@@ -437,7 +476,7 @@ async function loadProfileById(pool, id) {
   const result = await pool.request()
     .input('id', sql.UniqueIdentifier, id)
     .query(`
-      SELECT TOP 1 [id], [email], [full_name], [role], [warehouse], [is_active], [created_at], [updated_at]
+      SELECT TOP 1 [id], [email], [phone], [full_name], [role], [warehouse], [is_active], [account_status], [approval_note], [approved_by], [approved_at], [created_at], [updated_at]
       FROM dbo.profiles
       WHERE id = @id
     `)
@@ -472,6 +511,7 @@ async function enrichRowForWrite(pool, tableName, row, action = 'insert') {
   if (tableName === 'profiles') {
     if (!enriched.created_at && action === 'insert') enriched.created_at = nowIso()
     if (!enriched.updated_at) enriched.updated_at = nowIso()
+    if (!enriched.account_status && action === 'insert') enriched.account_status = 'approved'
   }
 
   return enriched
@@ -496,7 +536,7 @@ async function sessionFromRequest(req, _res, next) {
   try {
     const pool = await getPool()
     const profile = await loadProfileById(pool, payload.sub)
-    if (!profile || profile.is_active === false) {
+    if (!profile || profile.is_active === false || profile.account_status !== 'approved') {
       req.session = null
       next()
       return
@@ -745,10 +785,15 @@ app.post('/api/auth/login', async (req, res) => {
         SELECT TOP 1
           p.id,
           p.email,
+          p.phone,
           p.full_name,
           p.role,
           p.warehouse,
           p.is_active,
+          p.account_status,
+          p.approval_note,
+          p.approved_by,
+          p.approved_at,
           p.created_at,
           p.updated_at,
           a.password_hash,
@@ -767,6 +812,24 @@ app.post('/api/auth/login', async (req, res) => {
     const isMatch = await bcrypt.compare(password, record.password_hash)
     if (!isMatch) {
       res.status(401).json({ error: { message: 'Invalid login credentials' } })
+      return
+    }
+
+    if (record.account_status === 'pending') {
+      res.status(403).json({ error: { message: 'Dang ky thanh cong, vui long doi admin xac nhan tai khoan.' } })
+      return
+    }
+
+    if (record.account_status === 'rejected') {
+      const rejectionMessage = record.approval_note
+        ? `Tai khoan cua ban da bi tu choi. ${record.approval_note}`
+        : 'Tai khoan cua ban da bi tu choi.'
+      res.status(403).json({ error: { message: rejectionMessage } })
+      return
+    }
+
+    if (record.is_active === false) {
+      res.status(403).json({ error: { message: 'Tai khoan cua ban da bi khoa, vui long lien he admin.' } })
       return
     }
 
@@ -805,6 +868,7 @@ app.post('/api/auth/users', requireAdmin, async (req, res) => {
   try {
     const { email, password, options } = req.body || {}
     const fullName = options?.data?.full_name || ''
+    const phone = options?.data?.phone || null
     const role = options?.data?.role || 'nhanvien'
     const warehouse = options?.data?.warehouse || null
 
@@ -819,13 +883,14 @@ app.post('/api/auth/users', requireAdmin, async (req, res) => {
     const request = pool.request()
     request.input('id', sql.UniqueIdentifier, id)
     request.input('email', sql.NVarChar(255), String(email).trim().toLowerCase())
+    request.input('phone', sql.NVarChar(50), phone)
     request.input('fullName', sql.NVarChar(255), fullName)
     request.input('role', sql.NVarChar(50), role)
     request.input('warehouse', sql.NVarChar(255), warehouse)
     request.input('passwordHash', sql.NVarChar(sql.MAX), passwordHash)
     await request.query(`
-      INSERT INTO dbo.profiles (id, email, full_name, role, warehouse, is_active, created_at, updated_at)
-      VALUES (@id, @email, @fullName, @role, @warehouse, 1, SYSUTCDATETIME(), SYSUTCDATETIME());
+      INSERT INTO dbo.profiles (id, email, phone, full_name, role, warehouse, is_active, account_status, approval_note, approved_at, created_at, updated_at)
+      VALUES (@id, @email, @phone, @fullName, @role, @warehouse, 1, 'approved', NULL, SYSUTCDATETIME(), SYSUTCDATETIME(), SYSUTCDATETIME());
 
       INSERT INTO dbo.local_auth_accounts (id, email, password_hash, must_change_password, created_at, updated_at)
       VALUES (@id, @email, @passwordHash, 0, SYSUTCDATETIME(), SYSUTCDATETIME());
@@ -836,6 +901,92 @@ app.post('/api/auth/users', requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('[auth/users]', error)
     res.status(500).json({ error: { message: error.message || 'Khong tao duoc tai khoan local.' } })
+  }
+})
+
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { email, password, fullName, phone } = req.body || {}
+    const normalizedEmail = String(email || '').trim().toLowerCase()
+    const normalizedName = String(fullName || '').trim()
+    const normalizedPhone = String(phone || '').trim()
+
+    if (!normalizedEmail || !password || !normalizedName || !normalizedPhone) {
+      res.status(400).json({ error: { message: 'Vui long nhap day du ho ten, so dien thoai, email va mat khau.' } })
+      return
+    }
+
+    const pool = await getPool()
+    const duplicateCheck = await pool.request()
+      .input('email', sql.NVarChar(255), normalizedEmail)
+      .query(`
+        SELECT TOP 1 id
+        FROM dbo.profiles
+        WHERE LOWER(email) = @email
+      `)
+
+    if (duplicateCheck.recordset[0]) {
+      res.status(409).json({ error: { message: 'Email nay da ton tai trong he thong.' } })
+      return
+    }
+
+    const id = uuidv4()
+    const passwordHash = await bcrypt.hash(String(password), 10)
+    const request = pool.request()
+    request.input('id', sql.UniqueIdentifier, id)
+    request.input('email', sql.NVarChar(255), normalizedEmail)
+    request.input('phone', sql.NVarChar(50), normalizedPhone)
+    request.input('fullName', sql.NVarChar(255), normalizedName)
+    request.input('passwordHash', sql.NVarChar(sql.MAX), passwordHash)
+    await request.query(`
+      INSERT INTO dbo.profiles (id, email, phone, full_name, role, warehouse, is_active, account_status, approval_note, approved_at, created_at, updated_at)
+      VALUES (@id, @email, @phone, @fullName, 'nhanvien', NULL, 0, 'pending', N'Cho admin xac nhan', NULL, SYSUTCDATETIME(), SYSUTCDATETIME());
+
+      INSERT INTO dbo.local_auth_accounts (id, email, password_hash, must_change_password, created_at, updated_at)
+      VALUES (@id, @email, @passwordHash, 0, SYSUTCDATETIME(), SYSUTCDATETIME());
+    `)
+
+    res.json({
+      data: {
+        success: true,
+        message: 'Dang ky thanh cong, vui long doi admin xac nhan tai khoan.',
+      },
+    })
+  } catch (error) {
+    console.error('[auth/register]', error)
+    res.status(500).json({ error: { message: error.message || 'Khong dang ky duoc tai khoan.' } })
+  }
+})
+
+app.post('/api/auth/registrations/:id/review', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params
+    const { approved, note } = req.body || {}
+    const approvalNote = String(note || '').trim() || (approved ? 'Da duoc admin xac nhan.' : 'Tai khoan cua ban da bi tu choi.')
+    const pool = await getPool()
+    const request = pool.request()
+    request.input('id', sql.UniqueIdentifier, id)
+    request.input('approvedBy', sql.UniqueIdentifier, req.session.profile.id)
+    request.input('approvedAt', sql.DateTime2, new Date())
+    request.input('approvalNote', sql.NVarChar(500), approvalNote)
+    request.input('isActive', sql.Bit, approved ? 1 : 0)
+    request.input('accountStatus', sql.NVarChar(50), approved ? 'approved' : 'rejected')
+    await request.query(`
+      UPDATE dbo.profiles
+      SET is_active = @isActive,
+          account_status = @accountStatus,
+          approval_note = @approvalNote,
+          approved_by = @approvedBy,
+          approved_at = @approvedAt,
+          updated_at = SYSUTCDATETIME()
+      WHERE id = @id
+    `)
+
+    const profile = await loadProfileById(pool, id)
+    res.json({ data: { profile } })
+  } catch (error) {
+    console.error('[auth/registrations/review]', error)
+    res.status(500).json({ error: { message: error.message || 'Khong xu ly duoc yeu cau dang ky.' } })
   }
 })
 
