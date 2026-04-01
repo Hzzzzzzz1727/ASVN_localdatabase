@@ -7,6 +7,8 @@ export function useGeocodingAndRouting(customersRef) {  // truyền customers t�
   const showRouteModal = ref(false)
   const routeCustomers = ref([])
   const isLoadingRoute = ref(false)
+  const geocodeCache = new Map()
+  const routeDistanceCache = new Map()
 
   const openRouteModal = () => {
     showRouteModal.value = true
@@ -23,6 +25,8 @@ export function useGeocodingAndRouting(customersRef) {  // truyền customers t�
   // Geocode địa chỉ (giữ nguyên logic cũ, chỉ tinh chỉnh)
   const geocodeAddress = async (address) => {
     if (!address || !address.trim()) return null
+    const normalizedAddress = address.trim()
+    if (geocodeCache.has(normalizedAddress)) return geocodeCache.get(normalizedAddress)
 
     const photonBase = 'https://photon.komoot.io/api/?limit=1&lang=vi&q='
     const nominatimBase = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=1&q='
@@ -46,7 +50,9 @@ export function useGeocodingAndRouting(customersRef) {  // truyền customers t�
           const f = json.features[0]
           const [lon, lat] = f.geometry.coordinates
           console.log('[Photon OK]', variant)
-          return { lat: parseFloat(lat), lng: parseFloat(lon), displayName: f.properties.name || f.properties.label }
+          const result = { lat: parseFloat(lat), lng: parseFloat(lon), displayName: f.properties.name || f.properties.label }
+          geocodeCache.set(normalizedAddress, result)
+          return result
         }
 
         // Fallback Nominatim
@@ -54,13 +60,16 @@ export function useGeocodingAndRouting(customersRef) {  // truyền customers t�
         json = await res.json()
         if (json?.length > 0) {
           console.log('[Nominatim OK]', variant)
-          return { lat: parseFloat(json[0].lat), lng: parseFloat(json[0].lon), displayName: json[0].display_name }
+          const result = { lat: parseFloat(json[0].lat), lng: parseFloat(json[0].lon), displayName: json[0].display_name }
+          geocodeCache.set(normalizedAddress, result)
+          return result
         }
       } catch (err) {
         console.warn('[Geocode Error]', variant, err.message)
       }
     }
     console.warn('[Geocode Fail]', address)
+    geocodeCache.set(normalizedAddress, null)
     return null
   }
 
@@ -75,16 +84,21 @@ export function useGeocodingAndRouting(customersRef) {  // truyền customers t�
 
   const getRouteDistanceMeters = async (from, to) => {
     if (!from || !to) return null
+    const cacheKey = `${from.lat},${from.lng}|${to.lat},${to.lng}`
+    if (routeDistanceCache.has(cacheKey)) return routeDistanceCache.get(cacheKey)
     try {
       const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=false`
       const res = await fetch(url)
       const json = await res.json()
       if (json.code === 'Ok' && json.routes?.length) {
-        return json.routes[0].distance // meters
+        const distance = json.routes[0].distance
+        routeDistanceCache.set(cacheKey, distance)
+        return distance // meters
       }
     } catch (e) {
       console.warn('[OSRM Error]', e.message)
     }
+    routeDistanceCache.set(cacheKey, null)
     return null
   }
 

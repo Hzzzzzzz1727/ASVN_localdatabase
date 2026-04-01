@@ -1,10 +1,12 @@
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { getSupabase } from '@/lib/supabase'
 
 export function useSupabaseCustomers() {
   const customers = ref([])
   const supabase = getSupabase()
   const isLoading = ref(false)
+  const hasHydratedCache = ref(false)
+  let loadPromise = null
   const CACHE_KEY = 'tv-repair-customers-cache'
   const IMAGE_MAX_WIDTH = 1600
   const IMAGE_MAX_HEIGHT = 1600
@@ -104,6 +106,9 @@ export function useSupabaseCustomers() {
   }
 
   const loadData = async () => {
+    if (loadPromise) return loadPromise
+
+    loadPromise = (async () => {
     isLoading.value = true
     try {
       const { data, error } = await supabase
@@ -130,23 +135,12 @@ export function useSupabaseCustomers() {
         return
       }
 
-      const newMap = new Map(newData.map((customer) => [customer.id, customer]))
-      const toRemove = customers.value.filter((customer) => !newMap.has(customer.id))
-      if (toRemove.length) {
-        toRemove.forEach((customer) => {
-          const index = customers.value.findIndex((item) => item.id === customer.id)
-          if (index !== -1) customers.value.splice(index, 1)
-        })
-      }
+      const currentMap = new Map(customers.value.map((customer) => [customer.id, customer]))
+      const nextMap = new Map(newData.map((customer) => [customer.id, customer]))
 
-      newData.forEach((newItem) => {
-        const index = customers.value.findIndex((customer) => customer.id === newItem.id)
-        if (index === -1) {
-          customers.value.unshift(newItem)
-          return
-        }
-
-        const old = customers.value[index]
+      customers.value = newData.map((newItem) => {
+        const old = currentMap.get(newItem.id)
+        if (!old) return newItem
         if (
           old.status !== newItem.status ||
           old.replacedPart !== newItem.replacedPart ||
@@ -158,16 +152,37 @@ export function useSupabaseCustomers() {
           old.statusLog?.length !== newItem.statusLog?.length ||
           old.warranty_months !== newItem.warranty_months ||
           old.warranty_start_at !== newItem.warranty_start_at ||
-          old.warranty_expires_at !== newItem.warranty_expires_at
+          old.warranty_expires_at !== newItem.warranty_expires_at ||
+          old.folderDrive !== newItem.folderDrive ||
+          old.address !== newItem.address ||
+          old.issue !== newItem.issue ||
+          old.phone !== newItem.phone ||
+          old.model !== newItem.model ||
+          old.serial !== newItem.serial ||
+          old.branch !== newItem.branch ||
+          old.warehouse !== newItem.warehouse
         ) {
-          customers.value[index] = { ...customers.value[index], ...newItem }
+          return { ...old, ...newItem }
         }
-      })
+        return old
+      }).filter((item) => nextMap.has(item.id))
     } catch (error) {
       if (!error?.message?.includes('aborted')) console.error('[loadData]', error)
     } finally {
       isLoading.value = false
+      loadPromise = null
     }
+    })()
+
+    return loadPromise
+  }
+
+  const hydrateCache = () => {
+    if (typeof window === 'undefined' || hasHydratedCache.value) return
+    hasHydratedCache.value = true
+    if (customers.value.length) return
+    const cached = loadCache()
+    if (cached.length) customers.value = cached
   }
 
   const loadMediaForItem = async (id) => {
@@ -288,17 +303,10 @@ export function useSupabaseCustomers() {
     return updated
   }
 
-  onMounted(() => {
-    if (typeof window !== 'undefined' && customers.value.length === 0) {
-      const cached = loadCache()
-      if (cached.length) customers.value = cached
-    }
-    loadData()
-  })
-
   return {
     customers,
     loadData,
+    hydrateCache,
     loadMediaForItem,
     uploadMediaFiles,
     removeMediaItem,

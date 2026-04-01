@@ -33,7 +33,7 @@ window.addEventListener('offline', () => { isOnline.value = false; showToast('M�
 const supabase = getSupabase()
 const searchQuery = ref('')
 const historySearchQuery = ref('')
-const { customers, loadData, loadMediaForItem, uploadMediaFiles, removeMediaItem, migrateBase64ToStorage } = useSupabaseCustomers()
+const { customers, loadData, hydrateCache, loadMediaForItem, uploadMediaFiles, removeMediaItem, migrateBase64ToStorage } = useSupabaseCustomers()
 
 const ensureSession = async () => {
   const { data: { session } } = await supabase.auth.getSession()
@@ -1087,15 +1087,23 @@ const openShareManager = (customer) => {
   window.open(buildShareAdminUrl(customer.id), '_blank', 'noopener')
 }
 
+let keepAliveTimer = null
+let visibilityHandler = null
+let focusHandler = null
+let broadcastChannel = null
+let stopLoginWatch = null
+
 // ── MOUNTED ───────────────────────────────────────────────────
 onMounted(async () => {
+  hydrateCache()
   await initAuth()
   if (isLoggedIn.value) {
     await loadData()
     syncWarehouseByRole()
   }
-  watch(isLoggedIn, async (val) => {
+  stopLoginWatch = watch(isLoggedIn, async (val) => {
     if (val) {
+      hydrateCache()
       await loadData()
       syncWarehouseByRole()
     }
@@ -1128,7 +1136,7 @@ onMounted(async () => {
   setupRealtime()
 
   // ── Keepalive: 2 phút ping 1 lần ─────────────────────────
-  setInterval(async () => {
+  keepAliveTimer = setInterval(async () => {
     try { await supabase.auth.getSession() } catch {}
     if (!realtimeChannel) { setupRealtime(); return }
     if (realtimeChannel.state !== 'joined') setupRealtime()
@@ -1154,20 +1162,21 @@ onMounted(async () => {
       isRecovering = false
     }
   }
-  document.addEventListener('visibilitychange', () => {
+  visibilityHandler = () => {
     if (document.visibilityState === 'visible') {
       setTimeout(() => { recoverAppState() }, 150)
     } else {
       lastActiveTime = Date.now()
     }
-  })
+  }
+  document.addEventListener('visibilitychange', visibilityHandler)
 
-  const channel = new BroadcastChannel('zalo_bridge')
-  channel.onmessage = (event) => { if (event.data) customHandleParse(event.data) }
+  broadcastChannel = new BroadcastChannel('zalo_bridge')
+  broadcastChannel.onmessage = (event) => { if (event.data) customHandleParse(event.data) }
 
   // Clipboard: chỉ parse nếu text mới
   let lastClipboardText = ''
-  window.addEventListener('focus', () => {
+  focusHandler = () => {
     const now = Date.now()
     if (now - lastFocusClipboardCheck < 2000) return
     lastFocusClipboardCheck = now
@@ -1183,13 +1192,19 @@ onMounted(async () => {
         }
       } catch {}
     }, 200)
-  })
+  }
+  window.addEventListener('focus', focusHandler)
 
   window.addEventListener('resize', syncMobileControlForViewport, { passive: true })
   syncMobileControlForViewport()
 })
 
 onUnmounted(() => {
+  if (stopLoginWatch) stopLoginWatch()
+  if (keepAliveTimer) clearInterval(keepAliveTimer)
+  if (visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler)
+  if (focusHandler) window.removeEventListener('focus', focusHandler)
+  if (broadcastChannel) broadcastChannel.close()
   window.removeEventListener('resize', syncMobileControlForViewport)
 })
 </script>
