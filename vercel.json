@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://sheet-reminder-dock-lets.trycloudflare.com/api/:match*"
+      "destination": "https://receiving-tribute-caution-backgrounds.trycloudflare.com/api/:match*"
     },
     {
       "source": "/media/(.*)",
-      "destination": "https://sheet-reminder-dock-lets.trycloudflare.com/media/$1"
+      "destination": "https://receiving-tribute-caution-backgrounds.trycloudflare.com/media/$1"
     }
   ]
 }
