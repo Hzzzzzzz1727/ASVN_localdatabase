@@ -377,63 +377,77 @@ function applyFilterClauses({ tableName, filters = [], request, startingIndex = 
 }
 
 async function ensureSchema(pool) {
-  await pool.request().query(`
-    IF COL_LENGTH('dbo.profiles', 'phone') IS NULL
-    BEGIN
-      ALTER TABLE dbo.profiles
-      ADD [phone] NVARCHAR(50) NULL;
-    END
+  const schemaQueries = [
+    `
+      IF COL_LENGTH('dbo.profiles', 'phone') IS NULL
+      BEGIN
+        ALTER TABLE dbo.profiles
+        ADD [phone] NVARCHAR(50) NULL;
+      END
+    `,
+    `
+      IF COL_LENGTH('dbo.profiles', 'account_status') IS NULL
+      BEGIN
+        ALTER TABLE dbo.profiles
+        ADD [account_status] NVARCHAR(50) NULL;
+      END
+    `,
+    `
+      IF COL_LENGTH('dbo.profiles', 'approval_note') IS NULL
+      BEGIN
+        ALTER TABLE dbo.profiles
+        ADD [approval_note] NVARCHAR(500) NULL;
+      END
+    `,
+    `
+      IF COL_LENGTH('dbo.profiles', 'approved_by') IS NULL
+      BEGIN
+        ALTER TABLE dbo.profiles
+        ADD [approved_by] UNIQUEIDENTIFIER NULL;
+      END
+    `,
+    `
+      IF COL_LENGTH('dbo.profiles', 'approved_at') IS NULL
+      BEGIN
+        ALTER TABLE dbo.profiles
+        ADD [approved_at] DATETIME2 NULL;
+      END
+    `,
+    `
+      UPDATE dbo.profiles
+      SET is_active = 1
+      WHERE is_active IS NULL;
+    `,
+    `
+      UPDATE dbo.profiles
+      SET account_status = 'approved'
+      WHERE account_status IS NULL;
+    `,
+    `
+      IF COL_LENGTH('dbo.customers', 'note') IS NULL
+      BEGIN
+        ALTER TABLE dbo.customers
+        ADD [note] NVARCHAR(MAX) NULL;
+      END
+    `,
+    `
+      IF OBJECT_ID(N'dbo.local_auth_accounts', N'U') IS NULL
+      BEGIN
+        CREATE TABLE [dbo].[local_auth_accounts] (
+          [id] UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+          [email] NVARCHAR(255) NOT NULL UNIQUE,
+          [password_hash] NVARCHAR(255) NOT NULL,
+          [must_change_password] BIT NOT NULL DEFAULT 1,
+          [created_at] DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+          [updated_at] DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+        );
+      END
+    `,
+  ]
 
-    IF COL_LENGTH('dbo.profiles', 'account_status') IS NULL
-    BEGIN
-      ALTER TABLE dbo.profiles
-      ADD [account_status] NVARCHAR(50) NULL;
-    END
-
-    IF COL_LENGTH('dbo.profiles', 'approval_note') IS NULL
-    BEGIN
-      ALTER TABLE dbo.profiles
-      ADD [approval_note] NVARCHAR(500) NULL;
-    END
-
-    IF COL_LENGTH('dbo.profiles', 'approved_by') IS NULL
-    BEGIN
-      ALTER TABLE dbo.profiles
-      ADD [approved_by] UNIQUEIDENTIFIER NULL;
-    END
-
-    IF COL_LENGTH('dbo.profiles', 'approved_at') IS NULL
-    BEGIN
-      ALTER TABLE dbo.profiles
-      ADD [approved_at] DATETIME2 NULL;
-    END
-
-    UPDATE dbo.profiles
-    SET is_active = 1
-    WHERE is_active IS NULL;
-
-    UPDATE dbo.profiles
-    SET account_status = 'approved'
-    WHERE account_status IS NULL;
-
-    IF COL_LENGTH('dbo.customers', 'note') IS NULL
-    BEGIN
-      ALTER TABLE dbo.customers
-      ADD [note] NVARCHAR(MAX) NULL;
-    END
-
-    IF OBJECT_ID(N'dbo.local_auth_accounts', N'U') IS NULL
-    BEGIN
-      CREATE TABLE [dbo].[local_auth_accounts] (
-        [id] UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
-        [email] NVARCHAR(255) NOT NULL UNIQUE,
-        [password_hash] NVARCHAR(255) NOT NULL,
-        [must_change_password] BIT NOT NULL DEFAULT 1,
-        [created_at] DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
-        [updated_at] DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
-      );
-    END
-  `)
+  for (const sqlText of schemaQueries) {
+    await pool.request().query(sqlText)
+  }
 
   const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10)
   await pool.request()
