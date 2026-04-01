@@ -1,8 +1,12 @@
 {
   "rewrites": [
     {
+      "source": "/api/:match*",
+      "destination": "https://sheet-reminder-dock-lets.trycloudflare.com/api/:match*"
+    },
+    {
       "source": "/media/(.*)",
-      "destination": "/api/media/$1"
+      "destination": "https://sheet-reminder-dock-lets.trycloudflare.com/media/$1"
     }
   ]
 }
