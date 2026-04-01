@@ -10,10 +10,25 @@ const repoRoot = path.resolve(__dirname, '..')
 const vercelConfigPath = path.join(repoRoot, 'vercel.json')
 
 const isWindows = process.platform === 'win32'
-const npmCommand = isWindows ? 'npm.cmd' : 'npm'
 
 function log(message) {
   process.stdout.write(`${message}\n`)
+}
+
+function spawnLogged(command, args, options = {}) {
+  if (isWindows) {
+    const child = spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `"${[command, ...args].join('" "')}"`], {
+      ...options,
+      windowsVerbatimArguments: true,
+      shell: false,
+    })
+    return child
+  }
+
+  return spawn(command, args, {
+    ...options,
+    shell: false,
+  })
 }
 
 function pipeOutput(child, prefix) {
@@ -93,10 +108,9 @@ async function updateVercelJson(baseUrl) {
 
 function runGit(args) {
   return new Promise((resolve, reject) => {
-    const child = spawn('git', args, {
+    const child = spawnLogged('git', args, {
       cwd: repoRoot,
       stdio: 'inherit',
-      shell: false,
     })
 
     child.on('exit', (code) => {
@@ -118,20 +132,18 @@ async function main() {
   const enableAutoPush = process.argv.includes('--git-push')
 
   log('[setup] Dang mo local API...')
-  const apiProcess = spawn(npmCommand, ['run', 'local-api'], {
+  const apiProcess = spawnLogged('npm', ['run', 'local-api'], {
     cwd: repoRoot,
     stdio: ['inherit', 'pipe', 'pipe'],
-    shell: false,
   })
   pipeOutput(apiProcess, 'local-api')
 
   const cloudflaredPath = resolveCloudflaredPath()
   log(`[setup] Dang mo cloudflared bang: ${cloudflaredPath}`)
 
-  const tunnelProcess = spawn(cloudflaredPath, ['tunnel', '--url', 'http://127.0.0.1:3030'], {
+  const tunnelProcess = spawnLogged(cloudflaredPath, ['tunnel', '--url', 'http://127.0.0.1:3030'], {
     cwd: repoRoot,
     stdio: ['inherit', 'pipe', 'pipe'],
-    shell: false,
   })
   pipeOutput(tunnelProcess, 'cloudflared')
 
