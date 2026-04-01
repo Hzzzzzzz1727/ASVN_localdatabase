@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://couple-carl-roland-vegetarian.trycloudflare.com/api/:match*"
+      "destination": "https://incorporated-mood-nurse-var.trycloudflare.com/api/:match*"
     },
     {
       "source": "/media/(.*)",
-      "destination": "https://couple-carl-roland-vegetarian.trycloudflare.com/media/$1"
+      "destination": "https://incorporated-mood-nurse-var.trycloudflare.com/media/$1"
     }
   ]
 }
