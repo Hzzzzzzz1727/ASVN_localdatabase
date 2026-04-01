@@ -20,3 +20,11 @@ a,
   }
 }
 
+button[data-single-click-locked="true"],
+[role="button"][data-single-click-locked="true"],
+.btn[data-single-click-locked="true"],
+.chip-wh[data-single-click-locked="true"],
+.media-del[data-single-click-locked="true"] {
+  cursor: not-allowed !important;
+  opacity: 0.72;
+}
