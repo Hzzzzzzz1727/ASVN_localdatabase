@@ -430,7 +430,7 @@ const parseOutsideText = () => {
   issue = issue.replace(/\b(tivi|tv|màn hình|máy)\b/gi, '').replace(/\s+/g, ' ').trim()
   // Lấy phần lỗi sau từ "lỗi" nếu có
   const loiMatch = outsideRawInput.value.match(/lỗi\s+(.+)/i)
-  if (loiMatch) issue = loiMatch[0].trim()
+  if (loiMatch) issue = loiMatch[1].trim()
 
   outsideForm.value = {
     name: name || outsideForm.value.name,
@@ -620,13 +620,56 @@ const getWarehouseBadgeClass = (wh) => wh === 'TDP' ? 'bg-primary' : 'bg-success
 // ── CA NGOÀI ──────────────────────────────────────────────────
 const openOutsideForm  = () => { showOutsideForm.value = true; outsideForm.value = { name: '', phone: '', brand: '', model: '', issue: '', note: '' }; outsideRawInput.value = '' }
 const closeOutsideForm = () => { showOutsideForm.value = false; outsideRawInput.value = '' }
+const normalizeModelForCompare = (value) => {
+  const normalized = (value || '')
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+  if (!normalized || normalized === 'chưa rõ') return ''
+  return normalized
+}
 const saveOutsideCa = async () => {
   if (!outsideForm.value.phone || !outsideForm.value.issue) { showToast('Vui lòng nhập SĐT và tình trạng TV!', 'error'); return }
+  const phone = outsideForm.value.phone.trim()
+  const normalizedNewModel = normalizeModelForCompare(`${outsideForm.value.brand} ${outsideForm.value.model}`.trim())
+  const matchedByPhone = customers.value.filter((c) =>
+    c.ticketId?.startsWith('NGOAI') && (c.phone || '').trim() === phone
+  )
+
+  if (matchedByPhone.length) {
+    const matchedByModel = matchedByPhone.find((c) => {
+      const existingModel = normalizeModelForCompare(c.model)
+      if (!existingModel) return false
+      return existingModel === normalizedNewModel
+    })
+
+    if (matchedByModel) {
+      const warranty = getWarrantyInfo(matchedByModel)
+      if (warranty?.expired === false) {
+        showToast(
+          `Khách này đã có ca ${matchedByModel.ticketId}, model ${matchedByModel.model || 'Chưa rõ'}, còn bảo hành ${warranty.remainingText.replace(/^Còn\s+/i, '').toLowerCase()}. Không cần tạo ca mới.`,
+          'warning',
+          5000
+        )
+        return
+      }
+
+      if (warranty?.expired) {
+        showToast(
+          `Khách này đã sửa TV này trước đây ${matchedByModel.ticketId}, bảo hành đã hết. Tạo ca mới và tính phí.`,
+          'warning',
+          4500
+        )
+      }
+    }
+  }
+
   const now = new Date()
   const ticketId = `NGOAI-${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}-${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}${now.getSeconds().toString().padStart(2,'0')}`
   const newCa = {
     ticketId, name: outsideForm.value.name.trim() || 'Khách ngoài',
-    phone: outsideForm.value.phone,
+    phone,
     model: `${outsideForm.value.brand} ${outsideForm.value.model}`.trim() || 'Chưa rõ',
     address: 'Ca ngoài - không có địa chỉ', issue: outsideForm.value.issue,
     media: [], folderDrive: '', status: 0, replacedPart: 'Chưa có linh kiện thay',
@@ -751,12 +794,12 @@ const saveOutsideNote = async () => {
   const updates = { note: selectedOutside.value.note || '' }
   const { error } = await supabase.from('customers').update(updates).eq('id', selectedOutside.value.id)
   if (error) {
-    showToast('KhÃ´ng lÆ°u Ä‘Æ°á»£c ghi chÃº: ' + error.message, 'error')
+    showToast('Không lưu được ghi chú: ' + error.message, 'error')
     return
   }
   updateLocalCustomer(selectedOutside.value.id, updates)
   selectedOutside.value = { ...selectedOutside.value, ...updates }
-  showToast('ÄÃ£ lÆ°u ghi chÃº ca ngoÃ i!', 'success')
+  showToast('Đã lưu ghi chú ca ngoài!', 'success')
 }
 
 const deleteCustomer = async (id) => {
