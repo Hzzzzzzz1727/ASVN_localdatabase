@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getPublicShareSupabase } from '@/lib/publicShareSupabase'
 
 const supabase = getPublicShareSupabase()
@@ -8,8 +8,11 @@ const loading = ref(true)
 const error = ref('')
 const sharePayload = ref(null)
 const shareUpdatedAt = ref('')
+const activeMedia = ref(null)
 
 const customer = computed(() => sharePayload.value || null)
+const customerMedia = computed(() => Array.isArray(customer.value?.media) ? customer.value.media : [])
+let refreshTimer = null
 
 const DETAIL_ICONS = {
   customer: 'Nguoi',
@@ -35,10 +38,24 @@ const STATUS_LABEL = {
   2: 'Hoan thanh',
 }
 
+const parseMaybeJsonDate = (value) => {
+  if (!value) return null
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value
+  if (typeof value === 'string') {
+    const match = value.match(/^\/Date\((\-?\d+)(?:[+-]\d+)?\)\/$/)
+    if (match) {
+      const parsed = new Date(Number(match[1]))
+      return Number.isNaN(parsed.getTime()) ? null : parsed
+    }
+  }
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
 const formatDateTime = (value) => {
   if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
+  const date = parseMaybeJsonDate(value)
+  if (!date) return value
   return date.toLocaleString('vi-VN', {
     day: '2-digit',
     month: '2-digit',
@@ -53,9 +70,31 @@ const formatPrice = (value) => {
   return amount > 0 ? `${amount.toLocaleString('vi-VN')}d` : '0d'
 }
 
-const loadPublicShare = async () => {
-  loading.value = true
-  error.value = ''
+const formatDateOnly = (value) => {
+  if (!value) return ''
+  const date = parseMaybeJsonDate(value)
+  if (!date) return value
+  return date.toLocaleDateString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
+}
+
+const openMediaViewer = (item) => {
+  if (!item?.data) return
+  activeMedia.value = item
+  document.body.style.overflow = 'hidden'
+}
+
+const closeMediaViewer = () => {
+  activeMedia.value = null
+  document.body.style.overflow = ''
+}
+
+const loadPublicShare = async ({ silent = false } = {}) => {
+  if (!silent || !sharePayload.value) loading.value = true
+  if (!silent) error.value = ''
 
   try {
     const params = new URLSearchParams(location.search)
@@ -82,13 +121,25 @@ const loadPublicShare = async () => {
     shareUpdatedAt.value = row?.updated_at || ''
   } catch (err) {
     console.error('[SharePage]', err)
-    error.value = err?.message || 'Khong mo duoc link xem nay.'
+    if (!silent || !sharePayload.value) {
+      error.value = err?.message || 'Khong mo duoc link xem nay.'
+    }
   } finally {
-    loading.value = false
+    if (!silent || !sharePayload.value) loading.value = false
   }
 }
 
-onMounted(loadPublicShare)
+onMounted(() => {
+  loadPublicShare()
+  refreshTimer = window.setInterval(() => {
+    if (document.visibilityState === 'visible') loadPublicShare({ silent: true })
+  }, 5000)
+})
+
+onUnmounted(() => {
+  if (refreshTimer) window.clearInterval(refreshTimer)
+  document.body.style.overflow = ''
+})
 </script>
 
 <template>
@@ -98,7 +149,7 @@ onMounted(loadPublicShare)
         <div class="hero-brand">
           <div class="hero-logo">TV</div>
           <div>
-            <div class="hero-title">Thong tin ca sua chua</div>
+            <div class="hero-title">THÔNG TIN CA</div>
           </div>
         </div>
         <div class="hero-note">Khong co quyen sua doi du lieu</div>
@@ -146,6 +197,10 @@ onMounted(loadPublicShare)
               <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.issue }}</span>Tinh trang</span>
               <span class="detail-value detail-value--danger">{{ customer.issue || 'Dang cap nhat' }}</span>
             </div>
+            <div class="detail-row" v-if="customer.note">
+              <span class="detail-label">Ghi chu</span>
+              <span class="detail-value">{{ customer.note }}</span>
+            </div>
             <div class="detail-row" v-if="customer.replacedPart">
               <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.part }}</span>Linh kien</span>
               <span class="detail-value">{{ customer.replacedPart }}</span>
@@ -160,7 +215,20 @@ onMounted(loadPublicShare)
             </div>
             <div class="detail-row" v-if="customer.doneDate">
               <span class="detail-label"><span class="detail-icon">{{ DETAIL_ICONS.done }}</span>Ngay hoan thanh</span>
-              <span class="detail-value">{{ customer.doneDate }}</span>
+              <span class="detail-value">{{ formatDateOnly(customer.doneDate) }}</span>
+            </div>
+          </div>
+        </section>
+
+        <section v-if="customerMedia.length" class="detail-card detail-card--soft">
+          <div class="section-title">Ảnh & Video</div>
+          <div class="share-media-grid">
+            <div v-for="(item, index) in customerMedia" :key="`${item.type}-${index}`" class="share-media-item">
+              <button type="button" class="share-media-button" @click="openMediaViewer(item)">
+                <video v-if="item.type === 'video'" :src="item.data" preload="metadata" muted playsinline></video>
+                <img v-else :src="item.data" alt="Anh sua chua" loading="lazy">
+                <span class="share-media-badge">{{ item.type === 'video' ? 'Video' : 'Anh' }}</span>
+              </button>
             </div>
           </div>
         </section>
@@ -200,6 +268,36 @@ onMounted(loadPublicShare)
             </div>
           </div>
         </section>
+      </div>
+    </div>
+
+    <div v-if="activeMedia" class="media-viewer" @click="closeMediaViewer">
+      <button type="button" class="media-viewer-close" @click.stop="closeMediaViewer">Dong</button>
+      <div class="media-viewer-inner" @click.stop>
+        <video
+          v-if="activeMedia.type === 'video'"
+          :src="activeMedia.data"
+          controls
+          autoplay
+          playsinline
+          class="media-viewer-content"
+        ></video>
+        <img
+          v-else
+          :src="activeMedia.data"
+          alt="Anh sua chua phong to"
+          class="media-viewer-content"
+        >
+        <a
+          v-if="activeMedia?.data"
+          class="media-viewer-download"
+          :href="activeMedia.data"
+          target="_blank"
+          rel="noopener noreferrer"
+          download
+        >
+          Tai xuong
+        </a>
       </div>
     </div>
   </div>
@@ -419,6 +517,101 @@ onMounted(loadPublicShare)
   color: #1f2937;
 }
 
+.share-media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.share-media-item {
+  border-radius: 18px;
+  overflow: hidden;
+  background: #e2e8f0;
+  aspect-ratio: 1;
+}
+
+.share-media-button {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  position: relative;
+  cursor: pointer;
+}
+
+.share-media-item img,
+.share-media-item video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.share-media-badge {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.78);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 6px 10px;
+}
+
+.media-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(2, 6, 23, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.media-viewer-inner {
+  width: min(100%, 980px);
+  max-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.media-viewer-content {
+  max-width: 100%;
+  max-height: 82vh;
+  border-radius: 22px;
+  background: #0f172a;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.35);
+}
+
+.media-viewer-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.media-viewer-download {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #fff;
+  text-decoration: none;
+  font-weight: 700;
+}
+
 .total-row {
   margin-top: 8px;
   padding-top: 14px;
@@ -427,10 +620,44 @@ onMounted(loadPublicShare)
 }
 
 @media (max-width: 640px) {
+  .share-view {
+    padding: 14px 10px 28px;
+  }
+
+  .share-shell {
+    gap: 14px;
+  }
+
   .hero-card,
   .detail-card {
-    padding: 18px;
+    padding: 16px;
     border-radius: 20px;
+  }
+
+  .hero-logo {
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    font-size: 1.08rem;
+  }
+
+  .hero-title {
+    font-size: 1.08rem;
+    line-height: 1.15;
+  }
+
+  .hero-note,
+  .updated-at {
+    font-size: 0.84rem;
+  }
+
+  .ticket-id {
+    font-size: 1.18rem;
+  }
+
+  .status-pill {
+    padding: 8px 12px;
+    font-size: 0.82rem;
   }
 
   .hero-card,
@@ -467,6 +694,11 @@ onMounted(loadPublicShare)
     letter-spacing: 0.01em;
   }
 
+  .detail-value {
+    font-size: 0.96rem;
+    line-height: 1.5;
+  }
+
   .detail-icon,
   .section-icon {
     display: inline-flex;
@@ -498,6 +730,45 @@ onMounted(loadPublicShare)
 
   .section-title {
     margin-bottom: 12px;
+  }
+
+  .share-media-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .share-media-item {
+    border-radius: 16px;
+  }
+
+  .share-media-badge {
+    right: 8px;
+    bottom: 8px;
+    font-size: 0.68rem;
+    padding: 5px 8px;
+  }
+
+  .media-viewer {
+    padding: 12px;
+  }
+
+  .media-viewer-content {
+    max-height: 76vh;
+    border-radius: 16px;
+  }
+
+  .media-viewer-close {
+    top: 10px;
+    right: 10px;
+    padding: 8px 12px;
+    font-size: 0.84rem;
+  }
+
+  .media-viewer-download {
+    right: 10px;
+    bottom: 10px;
+    padding: 8px 12px;
+    font-size: 0.84rem;
   }
 }
 

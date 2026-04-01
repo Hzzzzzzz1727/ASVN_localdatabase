@@ -8,13 +8,25 @@
   },
   "scripts": {
     "dev": "vite",
+    "local-api": "node server/local-api.mjs",
+    "dev:local": "concurrently \"npm:local-api\" \"npm:dev\"",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "migrate:supabase:sqlserver": "node scripts/export-supabase-to-sqlserver.mjs",
+    "migrate:supabase:media": "node scripts/download-supabase-media.mjs",
+    "migrate:blob:media": "node scripts/migrate-media-to-blob.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.91.0",
+    "@vercel/blob": "^2.3.2",
+    "bcryptjs": "^3.0.3",
     "bootstrap": "^5.3.8",
+    "cors": "^2.8.6",
     "dexie": "^4.2.1",
+    "express": "^5.2.1",
+    "mssql": "^12.2.1",
+    "multer": "^2.1.1",
+    "uuid": "^13.0.0",
     "vue": "^3.5.26",
     "vue-toastification": "^2.0.0-rc.5",
     "xlsx": "^0.18.5"
@@ -22,6 +34,7 @@
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.3",
     "autoprefixer": "^10.4.24",
+    "concurrently": "^9.2.1",
     "postcss": "^8.5.6",
     "vite": "^7.3.0",
     "vite-plugin-vue-devtools": "^8.0.5"

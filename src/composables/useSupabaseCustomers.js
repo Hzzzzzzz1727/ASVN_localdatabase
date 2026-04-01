@@ -1,4 +1,3 @@
-// src/composables/useSupabaseCustomers.js
 import { ref, onMounted } from 'vue'
 import { getSupabase } from '@/lib/supabase'
 
@@ -6,11 +5,35 @@ export function useSupabaseCustomers() {
   const customers = ref([])
   const supabase = getSupabase()
   const isLoading = ref(false)
+  const CACHE_KEY = 'tv-repair-customers-cache'
   const IMAGE_MAX_WIDTH = 1600
   const IMAGE_MAX_HEIGHT = 1600
   const IMAGE_QUALITY = 0.82
 
-  // ── URL public của bucket ─────────────────────────────────
+  const normalizeCustomer = (customer) => ({
+    ...customer,
+    statusLog: Array.isArray(customer?.statusLog) ? customer.statusLog : [],
+    lkItems: Array.isArray(customer?.lkItems) ? customer.lkItems : [],
+    media: Array.isArray(customer?.media) ? customer.media : [],
+  })
+
+  const loadCache = () => {
+    try {
+      const raw = window.localStorage.getItem(CACHE_KEY)
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed.map(normalizeCustomer) : []
+    } catch {
+      return []
+    }
+  }
+
+  const saveCache = (items) => {
+    try {
+      window.localStorage.setItem(CACHE_KEY, JSON.stringify(items))
+    } catch {}
+  }
+
   const BUCKET = 'media'
   const getPublicUrl = (path) => {
     const { data } = supabase.storage.from(BUCKET).getPublicUrl(path)
@@ -40,7 +63,7 @@ export function useSupabaseCustomers() {
       const ratio = Math.min(
         1,
         IMAGE_MAX_WIDTH / img.width,
-        IMAGE_MAX_HEIGHT / img.height
+        IMAGE_MAX_HEIGHT / img.height,
       )
       const width = Math.max(1, Math.round(img.width * ratio))
       const height = Math.max(1, Math.round(img.height * ratio))
@@ -57,7 +80,7 @@ export function useSupabaseCustomers() {
         canvas.toBlob(
           (blob) => resolve(blob),
           preferredType,
-          preferredType === 'image/png' ? undefined : IMAGE_QUALITY
+          preferredType === 'image/png' ? undefined : IMAGE_QUALITY,
         )
       })
 
@@ -72,15 +95,14 @@ export function useSupabaseCustomers() {
       return new File(
         [optimizedBlob],
         file.name.replace(/\.[^.]+$/, '') + `_opt.${ext}`,
-        { type: preferredType, lastModified: Date.now() }
+        { type: preferredType, lastModified: Date.now() },
       )
-    } catch (e) {
-      console.warn('[Optimize image] Fallback original file:', e)
+    } catch (error) {
+      console.warn('[Optimize image] Fallback original file:', error)
       return file
     }
   }
 
-  // ── Load danh sách ca (smart merge - không re-render toàn bộ) ─
   const loadData = async () => {
     isLoading.value = true
     try {
@@ -88,7 +110,7 @@ export function useSupabaseCustomers() {
         .from('customers')
         .select(`
           id, ticketId, name, phone, model, address, issue,
-          status, replacedPart, doneDate, createdAt,
+          status, replacedPart, doneDate, createdAt, note,
           folderDrive, warehouse, serial, branch, statusLog, price, lkItems,
           warranty_months, warranty_start_at, warranty_expires_at
         `)
@@ -100,73 +122,83 @@ export function useSupabaseCustomers() {
         return
       }
 
-      const newData = data || []
+      const newData = (data || []).map(normalizeCustomer)
+      saveCache(newData)
 
       if (customers.value.length === 0) {
         customers.value = newData
         return
       }
 
-      const newMap = new Map(newData.map(c => [c.id, c]))
-      const toRemove = customers.value.filter(c => !newMap.has(c.id))
+      const newMap = new Map(newData.map((customer) => [customer.id, customer]))
+      const toRemove = customers.value.filter((customer) => !newMap.has(customer.id))
       if (toRemove.length) {
-        toRemove.forEach(c => {
-          const idx = customers.value.findIndex(x => x.id === c.id)
-          if (idx !== -1) customers.value.splice(idx, 1)
+        toRemove.forEach((customer) => {
+          const index = customers.value.findIndex((item) => item.id === customer.id)
+          if (index !== -1) customers.value.splice(index, 1)
         })
       }
 
-      newData.forEach(newItem => {
-        const idx = customers.value.findIndex(c => c.id === newItem.id)
-        if (idx === -1) {
+      newData.forEach((newItem) => {
+        const index = customers.value.findIndex((customer) => customer.id === newItem.id)
+        if (index === -1) {
           customers.value.unshift(newItem)
-        } else {
-          const old = customers.value[idx]
-          if (
-            old.status !== newItem.status ||
-            old.replacedPart !== newItem.replacedPart ||
-            old.doneDate !== newItem.doneDate ||
-            old.name !== newItem.name ||
-            old.price !== newItem.price ||
-            old.lkItems?.length !== newItem.lkItems?.length ||
-            old.statusLog?.length !== newItem.statusLog?.length ||
-            old.warranty_months !== newItem.warranty_months ||
-            old.warranty_start_at !== newItem.warranty_start_at ||
-            old.warranty_expires_at !== newItem.warranty_expires_at
-          ) {
-            customers.value[idx] = { ...customers.value[idx], ...newItem }
-          }
+          return
+        }
+
+        const old = customers.value[index]
+        if (
+          old.status !== newItem.status ||
+          old.replacedPart !== newItem.replacedPart ||
+          old.doneDate !== newItem.doneDate ||
+          old.note !== newItem.note ||
+          old.name !== newItem.name ||
+          old.price !== newItem.price ||
+          old.lkItems?.length !== newItem.lkItems?.length ||
+          old.statusLog?.length !== newItem.statusLog?.length ||
+          old.warranty_months !== newItem.warranty_months ||
+          old.warranty_start_at !== newItem.warranty_start_at ||
+          old.warranty_expires_at !== newItem.warranty_expires_at
+        ) {
+          customers.value[index] = { ...customers.value[index], ...newItem }
         }
       })
-    } catch (e) {
-      if (!e?.message?.includes('aborted')) console.error('[loadData]', e)
+    } catch (error) {
+      if (!error?.message?.includes('aborted')) console.error('[loadData]', error)
     } finally {
       isLoading.value = false
     }
   }
 
-  // ── Load media của 1 ca ───────────────────────────────────
   const loadMediaForItem = async (id) => {
     const { data, error } = await supabase
       .from('customers')
       .select('media')
       .eq('id', id)
       .maybeSingle()
-    if (error) { console.error('[Media] Load error:', error.message); return [] }
+    if (error) {
+      console.error('[Media] Load error:', error.message)
+      return []
+    }
 
-    const raw = data?.media || []
-    return raw.map(m => {
-      if (m.source === 'storage' && m.path) {
-        return { ...m, data: getPublicUrl(m.path) }
+    const raw = Array.isArray(data?.media) ? data.media : []
+    return raw.map((mediaItem) => {
+      if (mediaItem?.source === 'storage' && mediaItem?.path) {
+        return { ...mediaItem, data: getPublicUrl(mediaItem.path) }
       }
-      if (m.path && !m.data) {
-        return { ...m, type: m.type || 'image', source: 'storage', data: getPublicUrl(m.path) }
+      if (mediaItem?.path && !mediaItem?.data) {
+        return {
+          ...mediaItem,
+          type: mediaItem.type || 'image',
+          source: 'storage',
+          data: getPublicUrl(mediaItem.path),
+        }
       }
-      if (m.data) {
-        return { ...m, type: m.type || 'image' }
+      if (mediaItem?.data) {
+        return { ...mediaItem, type: mediaItem.type || 'image' }
       }
-      if (typeof m === 'string') {
-        return { type: 'image', data: m, source: 'local' }
+      if (typeof mediaItem === 'string') {
+        return { type: 'image', data: mediaItem, source: 'local' }
       }
       return null
     }).filter(Boolean)
@@ -175,73 +207,80 @@ export function useSupabaseCustomers() {
   const uploadFileToStorage = async (file, customerId) => {
     const processedFile = await optimizeImageFile(file)
     const ext = processedFile.name.split('.').pop() || (processedFile.type.startsWith('video') ? 'mp4' : 'jpg')
-    const path = `${customerId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
-    const { error } = await supabase.storage.from(BUCKET).upload(path, processedFile, {
+    const filePath = `${customerId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+    const { data, error } = await supabase.storage.from(BUCKET).upload(filePath, processedFile, {
       cacheControl: '3600',
-      upsert: false
+      upsert: false,
     })
     if (error) throw error
-    return path
+    return data?.path || filePath
   }
 
-  const deleteFileFromStorage = async (path) => {
-    if (!path) return
-    await supabase.storage.from(BUCKET).remove([path])
+  const deleteFileFromStorage = async (filePath) => {
+    if (!filePath) return
+    await supabase.storage.from(BUCKET).remove([filePath])
   }
 
   const migrateBase64ToStorage = async (customerId, mediaArray) => {
     const updated = []
     let hasChanges = false
-    for (const m of mediaArray) {
-      if (m.source === 'storage' || m.source === 'drive') {
-        updated.push(m); continue
+
+    for (const mediaItem of mediaArray) {
+      if (mediaItem.source === 'storage' || mediaItem.source === 'drive') {
+        updated.push(mediaItem)
+        continue
       }
-      if (m.data && m.data.startsWith('data:')) {
+
+      if (mediaItem.data && mediaItem.data.startsWith('data:')) {
         try {
-          const res = await fetch(m.data)
-          const blob = await res.blob()
-          const ext = m.type === 'video' ? 'mp4' : 'jpg'
+          const response = await fetch(mediaItem.data)
+          const blob = await response.blob()
+          const ext = mediaItem.type === 'video' ? 'mp4' : 'jpg'
           const file = new File([blob], `migrated_${Date.now()}.${ext}`, { type: blob.type })
-          const path = await uploadFileToStorage(file, customerId)
-          updated.push({ type: m.type, source: 'storage', path })
+          const filePath = await uploadFileToStorage(file, customerId)
+          updated.push({ type: mediaItem.type, source: 'storage', path: filePath })
           hasChanges = true
-        } catch (e) {
-          console.warn('[Migrate] Lỗi convert:', e)
-          updated.push(m)
+        } catch (error) {
+          console.warn('[Migrate] Loi convert:', error)
+          updated.push(mediaItem)
         }
       } else {
-        updated.push(m)
+        updated.push(mediaItem)
       }
     }
+
     if (hasChanges) {
       await supabase.from('customers').update({ media: updated }).eq('id', customerId)
     }
+
     return updated
   }
 
   const uploadMediaFiles = async (files, customerId, currentMedia) => {
     const newItems = await Promise.all(files.map(async (file) => {
       try {
-        const path = await uploadFileToStorage(file, customerId)
-        return { type: file.type.startsWith('video') ? 'video' : 'image', source: 'storage', path }
-      } catch (e) {
-        console.error('[Upload] Lỗi:', e)
-        return await new Promise(resolve => {
+        const filePath = await uploadFileToStorage(file, customerId)
+        return { type: file.type.startsWith('video') ? 'video' : 'image', source: 'storage', path: filePath }
+      } catch (error) {
+        console.error('[Upload] Loi:', error)
+        return await new Promise((resolve) => {
           const reader = new FileReader()
           reader.onload = () => resolve({
             type: file.type.startsWith('video') ? 'video' : 'image',
-            data: reader.result, source: 'local'
+            data: reader.result,
+            source: 'local',
           })
           reader.readAsDataURL(file)
         })
       }
     }))
+
     return [...currentMedia, ...newItems]
   }
 
   const removeMediaItem = async (mediaArray, index) => {
     const item = mediaArray[index]
-    if (item.source === 'storage' && item.path) {
+    if (item?.source === 'storage' && item?.path) {
       await deleteFileFromStorage(item.path)
     }
     const updated = [...mediaArray]
@@ -249,11 +288,22 @@ export function useSupabaseCustomers() {
     return updated
   }
 
-  onMounted(() => { loadData() })
+  onMounted(() => {
+    if (typeof window !== 'undefined' && customers.value.length === 0) {
+      const cached = loadCache()
+      if (cached.length) customers.value = cached
+    }
+    loadData()
+  })
 
   return {
-    customers, loadData, loadMediaForItem,
-    uploadMediaFiles, removeMediaItem,
-    migrateBase64ToStorage, getPublicUrl, isLoading
+    customers,
+    loadData,
+    loadMediaForItem,
+    uploadMediaFiles,
+    removeMediaItem,
+    migrateBase64ToStorage,
+    getPublicUrl,
+    isLoading,
   }
 }

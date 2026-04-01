@@ -3,18 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" href="/favicon.ico" />
-    
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Quản lý ca bảo hành TV Xiaomi - Đà Nẵng" />
+    <meta name="description" content="Quan ly ca bao hanh TV Xiaomi - Da Nang" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="mobile-web-app-capable" content="yes" />
-
-    <title>BH TV Xiaomi - Đà Nẵng</title>
-
-    <!-- ✅ Đường dẫn đúng -->
+    <title>BH TV Xiaomi - Da Nang</title>
     <link rel="manifest" href="/manifest.json" />
-
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
@@ -22,14 +17,22 @@
   <body>
     <div id="app"></div>
     <script type="module" src="/src/main.js"></script>
-
     <script>
+      const isLocalHost = ['localhost', '127.0.0.1'].includes(location.hostname)
+
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js')
-          .then(reg => console.log('✅ Service Worker registered:', reg))
-          .catch(err => console.error('❌ SW registration failed:', err))
+        if (isLocalHost) {
+          navigator.serviceWorker.getRegistrations()
+            .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+            .then(() => ('caches' in window ? caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key)))) : null))
+            .then(() => console.log('Local mode: cleared old service workers and caches'))
+            .catch((err) => console.error('Local mode: failed to clear service workers/caches', err))
+        } else {
+          navigator.serviceWorker.register('/sw.js')
+            .then((registration) => console.log('Service Worker registered:', registration))
+            .catch((err) => console.error('SW registration failed:', err))
+        }
       }
     </script>
-    
   </body>
 </html>

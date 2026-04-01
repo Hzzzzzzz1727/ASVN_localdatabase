@@ -43,6 +43,20 @@ const formatDateTime = (value) => {
   })
 }
 
+const normalizeProfileAccess = (profile) => {
+  if (!profile) {
+    return {
+      isActive: false,
+      role: '',
+    }
+  }
+
+  return {
+    isActive: profile.is_active !== false,
+    role: String(profile.role || '').trim().toLowerCase(),
+  }
+}
+
 const ensureAdmin = async () => {
   const { data: { session } } = await supabase.auth.getSession()
   const userId = session?.user?.id
@@ -55,7 +69,8 @@ const ensureAdmin = async () => {
     .single()
 
   if (profileError) throw profileError
-  if (!profile?.is_active || profile?.role !== 'admin') {
+  const access = normalizeProfileAccess(profile)
+  if (!access.isActive || access.role !== 'admin') {
     throw new Error('Trang nay chi danh cho admin.')
   }
 

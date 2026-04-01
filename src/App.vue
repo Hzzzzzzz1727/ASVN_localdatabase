@@ -294,6 +294,7 @@ const openEditModal = (customer, source = 'asvn') => {
     model: customer.model || '',
     address: customer.address || '',
     issue: customer.issue || '',
+    note: customer.note || '',
     serial: customer.serial || '',
     branch: customer.branch || '',
     warehouse: customer.warehouse || '',
@@ -374,7 +375,7 @@ const modalMedia             = ref(null)
 const showTreModal           = ref(false)
 const showChoLkTreModal      = ref(false)
 const showOutsideForm        = ref(false)
-const outsideForm            = ref({ name: '', phone: '', brand: '', model: '', issue: '' })
+const outsideForm            = ref({ name: '', phone: '', brand: '', model: '', issue: '', note: '' })
 const outsideRawInput        = ref('')
 
 const parseOutsideText = () => {
@@ -584,7 +585,7 @@ const getWarehouseLabel     = (item) => item.warehouse === 'TDP' ? 'Kho TDP' : i
 const getWarehouseBadgeClass = (wh) => wh === 'TDP' ? 'bg-primary' : 'bg-success'
 
 // ── CA NGOÀI ──────────────────────────────────────────────────
-const openOutsideForm  = () => { showOutsideForm.value = true; outsideForm.value = { name: '', phone: '', brand: '', model: '', issue: '' }; outsideRawInput.value = '' }
+const openOutsideForm  = () => { showOutsideForm.value = true; outsideForm.value = { name: '', phone: '', brand: '', model: '', issue: '', note: '' }; outsideRawInput.value = '' }
 const closeOutsideForm = () => { showOutsideForm.value = false; outsideRawInput.value = '' }
 const saveOutsideCa = async () => {
   if (!outsideForm.value.phone || !outsideForm.value.issue) { showToast('Vui lòng nhập SĐT và tình trạng TV!', 'error'); return }
@@ -596,6 +597,7 @@ const saveOutsideCa = async () => {
     model: `${outsideForm.value.brand} ${outsideForm.value.model}`.trim() || 'Chưa rõ',
     address: 'Ca ngoài - không có địa chỉ', issue: outsideForm.value.issue,
     media: [], folderDrive: '', status: 0, replacedPart: 'Chưa có linh kiện thay',
+    note: outsideForm.value.note?.trim() || '',
     doneDate: null, createdAt: now.toISOString(), warehouse: 'TDP',
     warranty_months: null, warranty_start_at: null, warranty_expires_at: null
   }
@@ -711,6 +713,19 @@ const saveOutsidePart = async () => {
 }
 
 // ── XÓA CA (chỉ admin) ───────────────────────────────────────
+const saveOutsideNote = async () => {
+  if (!selectedOutside.value) return
+  const updates = { note: selectedOutside.value.note || '' }
+  const { error } = await supabase.from('customers').update(updates).eq('id', selectedOutside.value.id)
+  if (error) {
+    showToast('KhÃ´ng lÆ°u Ä‘Æ°á»£c ghi chÃº: ' + error.message, 'error')
+    return
+  }
+  updateLocalCustomer(selectedOutside.value.id, updates)
+  selectedOutside.value = { ...selectedOutside.value, ...updates }
+  showToast('ÄÃ£ lÆ°u ghi chÃº ca ngoÃ i!', 'success')
+}
+
 const deleteCustomer = async (id) => {
   if (!canDelete.value) { showToast('Bạn không có quyền xóa ca!', 'error'); return }
   const item = customers.value.find(c => c.id === id)
@@ -822,9 +837,20 @@ const saveFolderLink  = async (id) => {
 
 // ── HELPERS ───────────────────────────────────────────────────
 const selectTreCa = (item) => { searchQuery.value = item.ticketId; closeTreModal() }
+const parseMaybeJsonDate = (value) => {
+  if (!value) return new Date('')
+  if (value instanceof Date) return value
+  if (typeof value === 'string') {
+    const match = value.match(/^\/Date\((\-?\d+)(?:[+-]\d+)?\)\/$/)
+    if (match) {
+      return new Date(Number(match[1]))
+    }
+  }
+  return new Date(value)
+}
 const formatDate  = (dateStr) => {
   if (!dateStr) return 'Chưa có ngày tạo'
-  const d = new Date(dateStr)
+  const d = parseMaybeJsonDate(dateStr)
   return isNaN(d.getTime()) ? 'Ngày không hợp lệ'
     : d.toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
@@ -1728,6 +1754,13 @@ onUnmounted(() => {
                   <h5 class="mb-1 fw-bold">{{ selectedOutside.name }}</h5>
                   <a :href="'tel:'+selectedOutside.phone" class="text-secondary fw-bold mb-3 d-block text-decoration-none">{{ selectedOutside.phone }}</a>
                   <p><strong>Model:</strong> {{ selectedOutside.model }}</p>
+                  <div class="mt-3 mb-3">
+                    <label class="form-label fw-bold">Ghi chú:</label>
+                    <textarea v-model="selectedOutside.note" class="form-control" rows="3" placeholder="Nhap ghi chu de khach xem duoc tren link..."></textarea>
+                    <div class="mt-2 d-flex justify-content-end">
+                      <button @click="saveOutsideNote" class="btn btn-outline-primary btn-sm fw-bold">Luu ghi chu</button>
+                    </div>
+                  </div>
                   <p><strong>Lỗi:</strong> <span class="text-danger fw-bold">{{ selectedOutside.issue }}</span></p>
                   <p><strong>Ngày tạo:</strong> {{ formatDate(selectedOutside.createdAt) }}</p>
                   <p v-if="selectedOutside.doneDate"><strong>Ngày hoàn thành:</strong> {{ selectedOutside.doneDate }}</p>
