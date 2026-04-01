@@ -706,6 +706,18 @@ async function removeFromConfiguredStorage(bucket, storedPath) {
 }
 
 const app = express()
+app.use((req, res, next) => {
+  const requestOrigin = req.headers.origin || '*'
+  res.header('Access-Control-Allow-Origin', requestOrigin)
+  res.header('Vary', 'Origin')
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization')
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(204)
+    return
+  }
+  next()
+})
 app.use(cors())
 app.use(express.json({ limit: '25mb' }))
 app.use('/media', express.static(mediaRoot))
