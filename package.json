@@ -10,6 +10,8 @@
     "dev": "vite",
     "local-api": "node server/local-api.mjs",
     "dev:local": "concurrently \"npm:local-api\" \"npm:dev\"",
+    "public:tunnel": "node scripts/start-public-tunnel.mjs",
+    "public:tunnel:push": "node scripts/start-public-tunnel.mjs --git-push",
     "build": "vite build",
     "preview": "vite preview",
     "migrate:supabase:sqlserver": "node scripts/export-supabase-to-sqlserver.mjs",
