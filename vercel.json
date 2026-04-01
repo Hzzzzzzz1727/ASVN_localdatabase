@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://biblical-fwd-expected-amplifier.trycloudflare.com/api/:match*"
+      "destination": "https://portion-mambo-disc-plastics.trycloudflare.com/api/:match*"
     },
     {
       "source": "/media/(.*)",
-      "destination": "https://biblical-fwd-expected-amplifier.trycloudflare.com/media/$1"
+      "destination": "https://portion-mambo-disc-plastics.trycloudflare.com/media/$1"
     }
   ]
 }
