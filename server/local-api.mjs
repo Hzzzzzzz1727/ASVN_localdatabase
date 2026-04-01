@@ -503,6 +503,16 @@ function normalizedWarehouse(value) {
   return warehouse || null
 }
 
+function buildDuplicateMessage(label, value) {
+  return `${label} "${String(value || '').trim()}" da ton tai.`
+}
+
+function getSqlDuplicateValue(error) {
+  const message = String(error?.message || '')
+  const match = message.match(/duplicate key value is \((.+?)\)/i)
+  return match?.[1]?.trim() || ''
+}
+
 function isAdminProfile(profile) {
   return String(profile?.role || '').trim().toLowerCase() === 'admin'
 }
@@ -540,6 +550,34 @@ async function resolveRowsByFilters(pool, tableName, filters = [], columns = '*'
     columns,
     filters,
   })
+}
+
+async function deleteProfilesWithAuth(pool, payload = {}) {
+  const profiles = await executeSelect(pool, 'profiles', {
+    columns: 'id',
+    filters: payload.filters || [],
+  })
+
+  if (!profiles.length) return []
+
+  const transaction = new sql.Transaction(pool)
+  await transaction.begin()
+
+  try {
+    const profileIds = profiles.map((profile) => profile.id).filter(Boolean)
+    for (const [index, profileId] of profileIds.entries()) {
+      const authRequest = new sql.Request(transaction)
+      authRequest.input(`authId${index}`, sql.UniqueIdentifier, profileId)
+      await authRequest.query(`DELETE FROM dbo.local_auth_accounts WHERE id = @authId${index}`)
+    }
+
+    const deletedProfiles = await executeDelete(transaction, 'profiles', payload)
+    await transaction.commit()
+    return deletedProfiles
+  } catch (error) {
+    await transaction.rollback()
+    throw error
+  }
 }
 
 async function authorizeDbRequest(pool, req, tableName, action, payload = {}) {
@@ -993,6 +1031,7 @@ app.post('/api/auth/logout', async (req, res) => {
 })
 
 app.post('/api/auth/users', requireAdmin, async (req, res) => {
+  const normalizedEmail = String(req.body?.email || '').trim().toLowerCase()
   try {
     const { email, password, options } = req.body || {}
     const fullName = options?.data?.full_name || ''
@@ -1000,17 +1039,33 @@ app.post('/api/auth/users', requireAdmin, async (req, res) => {
     const role = options?.data?.role || 'nhanvien'
     const warehouse = options?.data?.warehouse || null
 
-    if (!email || !password) {
+    if (!normalizedEmail || !password) {
       res.status(400).json({ error: { message: 'Email va mat khau la bat buoc.' } })
       return
     }
 
     const pool = await getPool()
+    const duplicateCheck = await pool.request()
+      .input('email', sql.NVarChar(255), normalizedEmail)
+      .query(`
+        SELECT TOP 1
+          p.id AS profile_id,
+          a.id AS auth_id
+        FROM dbo.local_auth_accounts a
+        FULL OUTER JOIN dbo.profiles p ON p.id = a.id
+        WHERE LOWER(COALESCE(a.email, p.email)) = @email
+      `)
+
+    if (duplicateCheck.recordset[0]) {
+      res.status(409).json({ error: { message: buildDuplicateMessage('Email', normalizedEmail) } })
+      return
+    }
+
     const id = uuidv4()
     const passwordHash = await bcrypt.hash(String(password), 10)
     const request = pool.request()
     request.input('id', sql.UniqueIdentifier, id)
-    request.input('email', sql.NVarChar(255), String(email).trim().toLowerCase())
+    request.input('email', sql.NVarChar(255), normalizedEmail)
     request.input('phone', sql.NVarChar(50), phone)
     request.input('fullName', sql.NVarChar(255), fullName)
     request.input('role', sql.NVarChar(50), role)
@@ -1028,6 +1083,11 @@ app.post('/api/auth/users', requireAdmin, async (req, res) => {
     res.json({ data: { user: { id, email: profile?.email, user_metadata: { full_name: profile?.full_name, role: profile?.role } } } })
   } catch (error) {
     console.error('[auth/users]', error)
+    if (String(error?.message || '').toLowerCase().includes('unique key')) {
+      const duplicateValue = getSqlDuplicateValue(error) || normalizedEmail
+      res.status(409).json({ error: { message: buildDuplicateMessage('Email', duplicateValue) } })
+      return
+    }
     res.status(500).json({ error: { message: error.message || 'Khong tao duoc tai khoan local.' } })
   }
 })
@@ -1054,7 +1114,7 @@ app.post('/api/auth/register', async (req, res) => {
       `)
 
     if (duplicateCheck.recordset[0]) {
-      res.status(409).json({ error: { message: 'Email nay da ton tai trong he thong.' } })
+      res.status(409).json({ error: { message: buildDuplicateMessage('Email', normalizedEmail) } })
       return
     }
 
@@ -1082,6 +1142,11 @@ app.post('/api/auth/register', async (req, res) => {
     })
   } catch (error) {
     console.error('[auth/register]', error)
+    if (String(error?.message || '').toLowerCase().includes('unique key')) {
+      const duplicateValue = getSqlDuplicateValue(error) || req.body?.email || ''
+      res.status(409).json({ error: { message: buildDuplicateMessage('Email', duplicateValue) } })
+      return
+    }
     res.status(500).json({ error: { message: error.message || 'Khong dang ky duoc tai khoan.' } })
   }
 })
@@ -1221,7 +1286,9 @@ app.post('/api/db/:tableName', async (req, res) => {
         }
       }
     } else if (action === 'delete') {
-      data = await executeDelete(pool, tableName, authorizedPayload)
+      data = tableName === 'profiles'
+        ? await deleteProfilesWithAuth(pool, authorizedPayload)
+        : await executeDelete(pool, tableName, authorizedPayload)
     } else if (action === 'upsert') {
       data = await executeUpsert(pool, tableName, authorizedPayload)
       if (tableName === 'customer_share_links') {
