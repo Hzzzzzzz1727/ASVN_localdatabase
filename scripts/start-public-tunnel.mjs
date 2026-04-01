@@ -17,10 +17,9 @@ function log(message) {
 
 function spawnLogged(command, args, options = {}) {
   if (isWindows) {
-    const child = spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `"${[command, ...args].join('" "')}"`], {
+    const child = spawn(command, args, {
       ...options,
-      windowsVerbatimArguments: true,
-      shell: false,
+      shell: true,
     })
     return child
   }
