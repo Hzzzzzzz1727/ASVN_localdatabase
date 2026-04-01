@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://minnesota-fda-treat-internal.trycloudflare.com/api/:match*"
+      "destination": "https://strict-nsw-healthy-mrna.trycloudflare.com/api/:match*"
     },
     {
       "source": "/media/(.*)",
-      "destination": "https://minnesota-fda-treat-internal.trycloudflare.com/media/$1"
+      "destination": "https://strict-nsw-healthy-mrna.trycloudflare.com/media/$1"
     }
   ]
 }
