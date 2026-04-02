@@ -1520,21 +1520,49 @@ onUnmounted(() => {
         >
         <span class="topbar-user">{{ userName }}</span>
         <button @click="openTreModal" class="btn-topbar btn-topbar--alert">
+          <span class="btn-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="8"></circle>
+              <path d="M12 8v4l2.5 1.5"></path>
+            </svg>
+          </span>
           <span class="btn-text">Ca trễ</span>
           <span v-if="treCaList.length" class="topbar-badge">{{ treCaList.length }}</span>
         </button>
         <button @click="showChoLkTreModal = true" class="btn-topbar btn-topbar--alert">
+          <span class="btn-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 10V6a4 4 0 0 0-8 0v4"></path>
+              <path d="M5 10h14l-1 8H6l-1-8Z"></path>
+              <path d="M12 13v2"></path>
+            </svg>
+          </span>
           <span class="btn-text">Trễ LK</span>
           <span v-if="choLkTreList.length" class="topbar-badge">{{ choLkTreList.length }}</span>
         </button>
         <button v-if="isAdmin"
           @click="showChart = true"
           class="btn-topbar">
+          <span class="btn-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 19V9"></path>
+              <path d="M12 19V5"></path>
+              <path d="M19 19v-7"></path>
+            </svg>
+          </span>
           <span class="btn-text">Biểu đồ</span>
         </button>
         <button v-if="isAdmin"
           @click="showAdminPanel = !showAdminPanel"
           :class="['btn-topbar', showAdminPanel ? 'btn-topbar--active' : '']">
+          <span class="btn-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9.5" cy="7" r="3"></circle>
+              <path d="M20 8v6"></path>
+              <path d="M17 11h6"></path>
+            </svg>
+          </span>
           <span class="btn-text">Quản lý TK</span>
         </button>
         <button @click="logout" class="btn-topbar btn-topbar--logout"><span class="btn-text">Thoát</span></button>
@@ -1589,12 +1617,30 @@ onUnmounted(() => {
 
         <div v-if="currentType !== 'OUTSIDE'" class="status-toggle-row status-toggle-row--sticky" @click.stop>
           <button @click="showTab = 'danglam'" :class="['btn fw-bold flex-grow-1', showTab==='danglam' ? 'btn-primary text-white' : 'btn-outline-primary']">
+            <span class="tab-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14.7 6.3a1 1 0 0 0-1.4 0l-7 7a2 2 0 0 0 0 2.8l1.6 1.6a2 2 0 0 0 2.8 0l7-7a1 1 0 0 0 0-1.4l-3-3Z"></path>
+                <path d="m12 9 3 3"></path>
+                <path d="M19 5l-1.5 1.5"></path>
+              </svg>
+            </span>
             <span class="tab-label">ĐANG LÀM</span> ({{ dangLam.length }})
           </button>
           <button @click="showTab = 'cholinkien'" :class="['btn fw-bold flex-grow-1', showTab==='cholinkien' ? 'btn-warning text-white' : 'btn-outline-warning']">
+            <span class="tab-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M16 10V6a4 4 0 0 0-8 0v4"></path>
+                <path d="M5 10h14l-1 8H6l-1-8Z"></path>
+              </svg>
+            </span>
             <span class="tab-label">CHỜ LK</span> ({{ choLinhKien.length }})
           </button>
           <button @click="showTab = 'hoanthanh'" :class="['btn fw-bold flex-grow-1', showTab==='hoanthanh' ? 'btn-success text-white' : 'btn-outline-success']">
+            <span class="tab-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m20 6-11 11-5-5"></path>
+              </svg>
+            </span>
             <span class="tab-label">XONG</span> ({{ Object.values(hoanThanh).flat().length }})
           </button>
         </div>
@@ -1602,12 +1648,30 @@ onUnmounted(() => {
         <!-- Tabs Ca Ngoài -->
         <div v-if="currentType === 'OUTSIDE'" class="status-toggle-row status-toggle-row--sticky" @click.stop>
           <button @click="outsideTab = 'danglam'" :class="['btn fw-bold flex-grow-1', outsideTab==='danglam' ? 'btn-primary text-white' : 'btn-outline-primary']">
+            <span class="tab-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14.7 6.3a1 1 0 0 0-1.4 0l-7 7a2 2 0 0 0 0 2.8l1.6 1.6a2 2 0 0 0 2.8 0l7-7a1 1 0 0 0 0-1.4l-3-3Z"></path>
+                <path d="m12 9 3 3"></path>
+                <path d="M19 5l-1.5 1.5"></path>
+              </svg>
+            </span>
             <span class="tab-label">ĐANG LÀM</span> ({{ outsideDangLam.length }})
           </button>
           <button @click="outsideTab = 'cholinkien'" :class="['btn fw-bold flex-grow-1', outsideTab==='cholinkien' ? 'btn-warning text-white' : 'btn-outline-warning']">
+            <span class="tab-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M16 10V6a4 4 0 0 0-8 0v4"></path>
+                <path d="M5 10h14l-1 8H6l-1-8Z"></path>
+              </svg>
+            </span>
             <span class="tab-label">CHỜ LK</span> ({{ outsideChoLinhKien.length }})
           </button>
           <button @click="outsideTab = 'hoanthanh'" :class="['btn fw-bold flex-grow-1', outsideTab==='hoanthanh' ? 'btn-success text-white' : 'btn-outline-success']">
+            <span class="tab-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m20 6-11 11-5-5"></path>
+              </svg>
+            </span>
             <span class="tab-label">XONG</span> ({{ outsideHoanThanh.length }})
           </button>
         </div>
@@ -2710,6 +2774,18 @@ onUnmounted(() => {
 .filter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
 .filter-field { display: flex; flex-direction: column; gap: 0.35rem; }
 .filter-label { font-size: 0.82rem; font-weight: 700; color: #475569; }
+.btn-icon,
+.tab-icon {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.btn-icon svg,
+.tab-icon svg {
+  width: 18px;
+  height: 18px;
+}
 
 /* ── Buttons/Toggles ──────────────────────────────────────── */
 .toggle-row, .status-toggle-row, .warehouse-toggle-row { display: flex; gap: 0.75rem; margin-bottom: 1rem; }
@@ -2853,8 +2929,19 @@ onUnmounted(() => {
   .topbar-right { gap: 0.3rem; flex: 1; justify-content: flex-end; }
   .topbar-search { min-width: 0; max-width: none; flex: 1 1 0; font-size: 0.8rem; padding: 0.35rem 0.55rem; }
   .btn-topbar { padding: 0.3rem 0.45rem; font-size: 1rem; border-radius: 6px; white-space: nowrap; min-width: 36px; }
+  .btn-icon { display: inline-flex; }
+  .btn-icon svg { width: 16px; height: 16px; }
+  .btn-topbar--logout::before {
+    content: '';
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    background: center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4'/%3E%3Cpath d='M16 17l5-5-5-5'/%3E%3Cpath d='M21 12H9'/%3E%3C/svg%3E");
+  }
   .btn-text { display: none; }
   .topbar-badge { margin-left: 0; position: absolute; top: -5px; right: -5px; }
+  .tab-icon { display: inline-flex; }
+  .tab-icon svg { width: 15px; height: 15px; }
   .tab-label { display: none; }
   .status-toggle-row button { font-size: 0.85rem; padding: 0.6rem 0.4rem; }
   .modal-dialog { margin: 0.5rem; max-width: calc(100% - 1rem); }
