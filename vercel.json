@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://assign-compensation-designer-facing.trycloudflare.com/api/:match*"
+      "destination": "https://fixtures-couple-balanced-fog.trycloudflare.com/api/:match*"
     },
     {
       "source": "/media/(.*)",
-      "destination": "https://assign-compensation-designer-facing.trycloudflare.com/media/$1"
+      "destination": "https://fixtures-couple-balanced-fog.trycloudflare.com/media/$1"
     }
   ]
 }
