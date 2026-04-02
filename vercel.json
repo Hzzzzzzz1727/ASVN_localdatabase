@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://travel-territory-hugo-jimmy.trycloudflare.com/api/:match*"
+      "destination": "https://belongs-districts-tablets-reported.trycloudflare.com/api/:match*"
     },
     {
       "source": "/media/(.*)",
-      "destination": "https://travel-territory-hugo-jimmy.trycloudflare.com/media/$1"
+      "destination": "https://belongs-districts-tablets-reported.trycloudflare.com/media/$1"
     }
   ]
 }
