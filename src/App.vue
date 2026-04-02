@@ -33,6 +33,8 @@ window.addEventListener('offline', () => { isOnline.value = false; showToast('M�
 const supabase = getSupabase()
 const searchQuery = ref('')
 const historySearchQuery = ref('')
+const completedDateFrom = ref('')
+const completedDateTo = ref('')
 const { customers, loadData, hydrateCache, loadMediaForItem, uploadMediaFiles, removeMediaItem, migrateBase64ToStorage } = useSupabaseCustomers()
 
 const ensureSession = async () => {
@@ -526,6 +528,7 @@ const selectWarehouse  = (wh) => {
 const selectType = (type) => {
   currentType.value = type; showTab.value = 'danglam'; outsideTab.value = 'danglam'
   searchQuery.value = ''; historySearchQuery.value = ''
+  completedDateFrom.value = ''; completedDateTo.value = ''
   if (type === 'ASVN') {
     showWarehouse.value = true
     syncWarehouseByRole()
@@ -563,10 +566,11 @@ const filteredCustomers = computed(() => {
   if (currentType.value === 'ASVN')         f = f.filter(c => c.ticketId?.startsWith('ASVN'))
   else if (currentType.value === 'CSVN')    f = f.filter(c => c.ticketId?.startsWith('CSVN'))
   else if (currentType.value === 'OUTSIDE') f = f.filter(c => c.ticketId?.startsWith('NGOAI'))
+  const hasAnyKeyword = !!searchQuery.value.trim() || !!historySearchQuery.value.trim()
   if (currentType.value === 'ASVN') {
     if (hasLockedWarehouse.value) {
       f = f.filter(c => c.warehouse === assignedWarehouse.value)
-    } else if (showWarehouse.value && !searchQuery.value) {
+    } else if (showWarehouse.value && !hasAnyKeyword) {
       f = f.filter(c => c.warehouse === currentWarehouse.value)
     }
   }
@@ -581,9 +585,28 @@ const filteredCustomers = computed(() => {
 
 const dangLam     = computed(() => filteredCustomers.value.filter(c => c.status === 0))
 const choLinhKien = computed(() => filteredCustomers.value.filter(c => c.status === 1))
+const parseDoneDateValue = (value) => {
+  if (!value || typeof value !== 'string') return null
+  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (!match) return null
+  const [, dd, mm, yyyy] = match
+  return `${yyyy}-${mm}-${dd}`
+}
 const hoanThanh   = computed(() => {
   const q = historySearchQuery.value.toLowerCase()
   let items = filteredCustomers.value.filter(c => c.status === 2)
+  if (completedDateFrom.value) {
+    items = items.filter(c => {
+      const doneDate = parseDoneDateValue(c.doneDate)
+      return doneDate && doneDate >= completedDateFrom.value
+    })
+  }
+  if (completedDateTo.value) {
+    items = items.filter(c => {
+      const doneDate = parseDoneDateValue(c.doneDate)
+      return doneDate && doneDate <= completedDateTo.value
+    })
+  }
   if (q) items = items.filter(c =>
     c.name?.toLowerCase().includes(q) || c.phone?.includes(q) ||
     c.ticketId?.toLowerCase().includes(q) || c.model?.toLowerCase().includes(q) ||
@@ -595,7 +618,22 @@ const hoanThanh   = computed(() => {
 })
 const outsideDangLam     = computed(() => filteredCustomers.value.filter(c => c.status === 0))
 const outsideChoLinhKien = computed(() => filteredCustomers.value.filter(c => c.status === 1))
-const outsideHoanThanh   = computed(() => filteredCustomers.value.filter(c => c.status === 2))
+const outsideHoanThanh   = computed(() => {
+  let items = filteredCustomers.value.filter(c => c.status === 2)
+  if (completedDateFrom.value) {
+    items = items.filter(c => {
+      const doneDate = parseDoneDateValue(c.doneDate)
+      return doneDate && doneDate >= completedDateFrom.value
+    })
+  }
+  if (completedDateTo.value) {
+    items = items.filter(c => {
+      const doneDate = parseDoneDateValue(c.doneDate)
+      return doneDate && doneDate <= completedDateTo.value
+    })
+  }
+  return items
+})
 // Ca chờ LK trễ > 3 ngày
 const choLkTreList = computed(() => {
   return customers.value.filter(c => {
@@ -801,6 +839,18 @@ const saveOutsideNote = async () => {
   selectedOutside.value = { ...selectedOutside.value, ...updates }
   showToast('Đã lưu ghi chú ca ngoài!', 'success')
 }
+const saveCustomerNote = async () => {
+  if (!selectedCustomer.value) return
+  const updates = { note: selectedCustomer.value.note || '' }
+  const { error } = await supabase.from('customers').update(updates).eq('id', selectedCustomer.value.id)
+  if (error) {
+    showToast('Không lưu được ghi chú: ' + error.message, 'error')
+    return
+  }
+  updateLocalCustomer(selectedCustomer.value.id, updates)
+  selectedCustomer.value = { ...selectedCustomer.value, ...updates }
+  showToast('Đã lưu ghi chú ca ASVN!', 'success')
+}
 
 const deleteCustomer = async (id) => {
   if (!canDelete.value) { showToast('Bạn không có quyền xóa ca!', 'error'); return }
@@ -943,23 +993,12 @@ const addMonths = (date, months) => {
   return result
 }
 const getStatusHistory = (logs) => Array.isArray(logs) ? logs.filter(log => typeof log?.status === 'number') : []
-const getWarrantyLog = (item) => {
-  if (!Array.isArray(item?.statusLog)) return null
-  return [...item.statusLog].reverse().find(log => log?.type === 'warranty') || null
-}
 const getWarrantyInfo = (item) => {
   if (item?.status !== 2) return null
 
   let months = item?.warranty_months
   let startRaw = item?.warranty_start_at
   let expiresRaw = item?.warranty_expires_at
-
-  if ((!months || !startRaw || !expiresRaw) && getWarrantyLog(item)) {
-    const warrantyLog = getWarrantyLog(item)
-    months = months || warrantyLog?.warrantyMonths
-    startRaw = startRaw || warrantyLog?.startAt
-    expiresRaw = expiresRaw || warrantyLog?.expiresAt
-  }
 
   if (!months || !startRaw || !expiresRaw) return null
 
@@ -1048,6 +1087,7 @@ const exportToExcel = (data, fileName) => {
 }
 const exportHoanThanhByWarehouse = (wh) => exportToExcel(customers.value.filter(c => c.status === 2 && c.ticketId?.startsWith('ASVN') && c.warehouse === wh), `Bao-Cao-Hoan-Thanh-${wh}`)
 const exportAllHoanThanh = () => exportToExcel(customers.value.filter(c => c.status === 2 && c.ticketId?.startsWith('ASVN')), 'Bao-Cao-Hoan-Thanh-All')
+const exportOutsideHoanThanh = () => exportToExcel(outsideHoanThanh.value, 'Bao-Cao-Ca-Ngoai-Hoan-Thanh')
 
 // ── SWIPE ĐỔI TRẠNG THÁI ──────────────────────────────────────
 const swipeBoundElements = new WeakSet()
@@ -1451,6 +1491,8 @@ onUnmounted(() => {
             <div class="d-flex gap-2 flex-wrap">
               <input type="text" v-model="historySearchQuery" class="form-control flex-grow-1 mb-2"
                 placeholder="Tìm trong lịch sử...">
+              <input type="date" v-model="completedDateFrom" class="form-control mb-2" title="Từ ngày">
+              <input type="date" v-model="completedDateTo" class="form-control mb-2" title="Đến ngày">
               <template v-if="isAdmin">
                 <div v-if="showWarehouse" class="d-flex gap-1 w-100">
                   <button @click="exportHoanThanhByWarehouse('TDP')" class="btn btn-outline-primary fw-bold flex-grow-1">Xuất TDP</button>
@@ -1472,6 +1514,11 @@ onUnmounted(() => {
             <button @click="openOutsideForm" class="btn btn-success fw-bold btn-sm">+ Tạo ca</button>
           </div>
           <input type="text" v-model="searchQuery" class="form-control mt-1" placeholder="Tìm kiếm nhanh...">
+          <div v-if="outsideTab === 'hoanthanh'" class="d-flex gap-2 flex-wrap mt-2">
+            <input type="date" v-model="completedDateFrom" class="form-control">
+            <input type="date" v-model="completedDateTo" class="form-control">
+            <button v-if="isAdmin" @click="exportOutsideHoanThanh" class="btn btn-outline-dark fw-bold">Xuất Excel ca ngoài</button>
+          </div>
         </div>
 
         <button
@@ -1740,6 +1787,13 @@ onUnmounted(() => {
                   <p><strong>Model:</strong> {{ selectedCustomer.model }}</p>
                   <p><strong>Địa chỉ:</strong> {{ selectedCustomer.address }}</p>
                   <p><strong>Lỗi:</strong> <span class="text-danger fw-bold">{{ selectedCustomer.issue }}</span></p>
+                  <div class="mt-3 mb-3">
+                    <label class="form-label fw-bold">Ghi chú:</label>
+                    <textarea v-model="selectedCustomer.note" class="form-control" rows="3" placeholder="Ghi chú kỹ thuật như đã gọi khách, lịch hẹn..."></textarea>
+                    <div class="mt-2 d-flex justify-content-end">
+                      <button @click="saveCustomerNote" class="btn btn-outline-primary btn-sm fw-bold">Lưu ghi chú</button>
+                    </div>
+                  </div>
                   <p><strong>Ngày tạo:</strong> {{ formatDate(selectedCustomer.createdAt) }}</p>
                   <p v-if="selectedCustomer.doneDate"><strong>Ngày hoàn thành:</strong> {{ selectedCustomer.doneDate }}</p>
                   <div class="mt-3 mb-3 status-editor">
@@ -1853,9 +1907,9 @@ onUnmounted(() => {
                   <p><strong>Model:</strong> {{ selectedOutside.model }}</p>
                   <div class="mt-3 mb-3">
                     <label class="form-label fw-bold">Ghi chú:</label>
-                    <textarea v-model="selectedOutside.note" class="form-control" rows="3" placeholder="Nhap ghi chu de khach xem duoc tren link..."></textarea>
+                    <textarea v-model="selectedOutside.note" class="form-control" rows="3" placeholder="Nhập và lưu ghi chú để thấy trông link"></textarea>
                     <div class="mt-2 d-flex justify-content-end">
-                      <button @click="saveOutsideNote" class="btn btn-outline-primary btn-sm fw-bold">Luu ghi chu</button>
+                      <button @click="saveOutsideNote" class="btn btn-outline-primary btn-sm fw-bold">Lưu ghi chú</button>
                     </div>
                   </div>
                   <p><strong>Lỗi:</strong> <span class="text-danger fw-bold">{{ selectedOutside.issue }}</span></p>
