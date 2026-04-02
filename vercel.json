@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://fixtures-couple-balanced-fog.trycloudflare.com/api/:match*"
+      "destination": "https://travel-territory-hugo-jimmy.trycloudflare.com/api/:match*"
     },
     {
       "source": "/media/(.*)",
-      "destination": "https://fixtures-couple-balanced-fog.trycloudflare.com/media/$1"
+      "destination": "https://travel-territory-hugo-jimmy.trycloudflare.com/media/$1"
     }
   ]
 }
