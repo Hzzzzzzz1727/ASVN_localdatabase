@@ -318,6 +318,9 @@ const collapseMobileControlCard = () => {
   if (!isMobileViewport()) return
   isMobileControlCollapsed.value = true
 }
+watch(sortOption, (value) => {
+  if (value === 'warehouse') sortOption.value = 'newest'
+})
 
 // ── EDIT CA ───────────────────────────────────────────────────
 const showEditModal   = ref(false)
@@ -1625,7 +1628,6 @@ onUnmounted(() => {
               <select v-model="sortOption" class="form-select">
                 <option value="newest">Mới nhất lên đầu</option>
                 <option value="oldest">Cũ nhất lên đầu</option>
-                <option value="warehouse">Theo kho TDP → NV</option>
               </select>
             </div>
           </div>
@@ -1636,7 +1638,6 @@ onUnmounted(() => {
               <select v-model="sortOption" class="form-select">
                 <option value="newest">Mới nhất lên đầu</option>
                 <option value="oldest">Cũ nhất lên đầu</option>
-                <option value="warehouse">Theo kho TDP → NV</option>
               </select>
             </div>
           </div>
@@ -1645,12 +1646,11 @@ onUnmounted(() => {
             <div class="d-flex gap-2 flex-wrap">
               <input type="text" v-model="historySearchQuery" class="form-control flex-grow-1 mb-2"
                 placeholder="Tìm trong lịch sử...">
-              <input type="date" v-model="completedDateFrom" class="form-control mb-2" title="Từ ngày">
-              <input type="date" v-model="completedDateTo" class="form-control mb-2" title="Đến ngày">
+              <input type="date" v-model="completedDateFrom" class="form-control mb-2" placeholder="Từ ngày">
+              <input type="date" v-model="completedDateTo" class="form-control mb-2" placeholder="Đến ngày">
               <select v-model="sortOption" class="form-select mb-2">
                 <option value="newest">Mới nhất lên đầu</option>
                 <option value="oldest">Cũ nhất lên đầu</option>
-                <option value="warehouse">Theo kho TDP → NV</option>
               </select>
               <template v-if="isAdmin">
                 <div v-if="showWarehouse" class="d-flex gap-1 w-100">
@@ -1682,7 +1682,6 @@ onUnmounted(() => {
             <select v-model="sortOption" class="form-select">
               <option value="newest">Mới nhất lên đầu</option>
               <option value="oldest">Cũ nhất lên đầu</option>
-              <option value="warehouse">Theo kho TDP → NV</option>
             </select>
           </div>
           <div v-if="outsideTab === 'hoanthanh'" class="d-flex gap-2 flex-wrap mt-2">
@@ -2865,6 +2864,7 @@ onUnmounted(() => {
 }
 @media (max-width: 768px) {
   .layout { width: 100%; max-width: 100%; padding: 1rem 0.5rem; gap: 1rem; }
+  .topbar-search { display: none; }
   .control-card, .cases-section { padding: 1rem; border-radius: 16px; }
   .control-card--sticky { top: 56px; }
   .control-card--mobile-collapsed { padding: 0.7rem 0.85rem; border-radius: 14px; box-shadow: 0 8px 18px rgba(15,23,42,.1); }
