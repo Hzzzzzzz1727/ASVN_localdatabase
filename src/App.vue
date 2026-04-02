@@ -259,6 +259,17 @@ const detailStatusDraft = ref(0)
 const outsideStatusDraft = ref(0)
 const isStatusActionLoading = ref(false)
 const isMobileControlCollapsed = ref(false)
+const isCustomerMediaLoading = ref(false)
+const isOutsideMediaLoading = ref(false)
+const confirmDialog = ref({
+  visible: false,
+  title: 'Xác nhận',
+  message: '',
+  confirmText: 'Đồng ý',
+  cancelText: 'Hủy',
+  variant: 'primary',
+  resolve: null,
+})
 
 const isMobileViewport = () => window.innerWidth <= 768
 const assignedWarehouse = computed(() => {
@@ -453,6 +464,7 @@ const customWarrantyMonths   = ref('')
 const openDetailModalFull = (customer) => {
   detailModalTab.value = 'info'
   detailStatusDraft.value = customer.status ?? 0
+  isCustomerMediaLoading.value = true
   selectedCustomer.value = { ...customer, media: [] }
   editingPart2.value = customer.replacedPart || ''
   showDetailModal.value = true
@@ -469,9 +481,12 @@ const openDetailModalFull = (customer) => {
           selectedCustomer.value = { ...selectedCustomer.value, media: migrated }
       })
     }
+  }).finally(() => {
+    if (selectedCustomer.value?.id === customer.id) isCustomerMediaLoading.value = false
   })
 }
 const closeDetailModal = () => {
+  isCustomerMediaLoading.value = false
   showDetailModal.value = false; selectedCustomer.value = null; document.body.style.overflow = ''
 }
 
@@ -481,6 +496,7 @@ const openOutsideDetailModal = (item) => {
   showWarrantyOptions.value = false
   showCustomWarrantyInput.value = false
   customWarrantyMonths.value = ''
+  isOutsideMediaLoading.value = true
   selectedOutside.value = { ...item, media: [] }
   editingOutsidePart.value = item.replacedPart || ''
   showOutsideDetailModal.value = true
@@ -495,12 +511,15 @@ const openOutsideDetailModal = (item) => {
           selectedOutside.value = { ...selectedOutside.value, media: migrated }
       })
     }
+  }).finally(() => {
+    if (selectedOutside.value?.id === item.id) isOutsideMediaLoading.value = false
   })
 }
 const closeOutsideDetailModal = () => {
   showWarrantyOptions.value = false
   showCustomWarrantyInput.value = false
   customWarrantyMonths.value = ''
+  isOutsideMediaLoading.value = false
   showOutsideDetailModal.value = false; selectedOutside.value = null; document.body.style.overflow = ''
 }
 
@@ -653,7 +672,7 @@ const treCaList = computed(() => {
 })
 
 const getWarehouseLabel     = (item) => item.warehouse === 'TDP' ? 'Kho TDP' : item.warehouse === 'NV' ? 'Kho NV' : ''
-const getWarehouseBadgeClass = (wh) => wh === 'TDP' ? 'bg-primary' : 'bg-success'
+const getWarehouseBadgeClass = (wh) => wh === 'TDP' ? 'warehouse-badge warehouse-badge--tdp' : 'warehouse-badge warehouse-badge--nv'
 
 // ── CA NGOÀI ──────────────────────────────────────────────────
 const openOutsideForm  = () => { showOutsideForm.value = true; outsideForm.value = { name: '', phone: '', brand: '', model: '', issue: '', note: '' }; outsideRawInput.value = '' }
@@ -723,14 +742,26 @@ const saveOutsideCa = async () => {
 
 // ── TRẠNG THÁI ────────────────────────────────────────────────
 const hoanTatKiemTra = async (item, event) => {
-  if (!confirm(`Chuyển ca ${item.ticketId} sang "Chờ linh kiện"?`)) { event.target.checked = false; return }
+  const confirmed = await openConfirmDialog({
+    title: 'Chuyển trạng thái',
+    message: `Chuyển ca ${item.ticketId} sang "Chờ linh kiện"?`,
+    confirmText: 'Chuyển',
+    variant: 'warning',
+  })
+  if (!confirmed) { event.target.checked = false; return }
   await ensureSession()
   await supabase.from('customers').update({ status: 1 }).eq('id', item.id)
   updateLocalCustomer(item.id, { status: 1 })
   showToast('Đã chuyển sang chờ linh kiện!', 'success')
 }
 const dongCa = async (item) => {
-  if (!confirm(`Chốt hoàn thành ca ${item.ticketId}?`)) return
+  const confirmed = await openConfirmDialog({
+    title: 'Chốt hoàn thành',
+    message: `Chốt hoàn thành ca ${item.ticketId}?`,
+    confirmText: 'Chốt ca',
+    variant: 'success',
+  })
+  if (!confirmed) return
   await ensureSession()
   const now = new Date()
   const dateStr = `${now.getDate().toString().padStart(2,'0')}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getFullYear()}`
@@ -859,7 +890,13 @@ const deleteCustomer = async (id) => {
   const msg = (showWarehouse.value && currentType.value === 'ASVN' && item.warehouse && item.warehouse !== currentWarehouse.value)
     ? `Ca này thuộc kho ${item.warehouse}, bạn có chắc xóa?`
     : 'Bạn có chắc chắn muốn xóa ca này?'
-  if (!confirm(msg)) return
+  const confirmed = await openConfirmDialog({
+    title: 'Xóa ca',
+    message: msg,
+    confirmText: 'Xóa',
+    variant: 'danger',
+  })
+  if (!confirmed) return
   const { error } = await supabase.from('customers').delete().eq('id', id)
   if (error) showToast('Lỗi xóa: ' + error.message, 'error')
   else {
@@ -940,7 +977,13 @@ const addSingleDrive = async (item) => {
   updateLocalMedia(item.id, currentMedia)
 }
 const removeMedia = async (item, index) => {
-  if (!confirm('Bạn có chắc muốn xóa ảnh/video này?')) return
+  const confirmed = await openConfirmDialog({
+    title: 'Xóa ảnh/video',
+    message: 'Bạn có chắc muốn xóa ảnh/video này?',
+    confirmText: 'Xóa',
+    variant: 'danger',
+  })
+  if (!confirmed) return
   const currentMedia = await loadMediaCached(item.id)
   const updated = await removeMediaItem(currentMedia, index)
   await supabase.from('customers').update({ media: updated }).eq('id', item.id)
@@ -963,6 +1006,31 @@ const saveFolderLink  = async (id) => {
 
 // ── HELPERS ───────────────────────────────────────────────────
 const selectTreCa = (item) => { searchQuery.value = item.ticketId; closeTreModal() }
+const openConfirmDialog = ({ title = 'Xác nhận', message, confirmText = 'Đồng ý', cancelText = 'Hủy', variant = 'primary' }) =>
+  new Promise((resolve) => {
+    confirmDialog.value = {
+      visible: true,
+      title,
+      message,
+      confirmText,
+      cancelText,
+      variant,
+      resolve,
+    }
+  })
+const closeConfirmDialog = (confirmed) => {
+  const resolver = confirmDialog.value.resolve
+  confirmDialog.value = {
+    visible: false,
+    title: 'Xác nhận',
+    message: '',
+    confirmText: 'Đồng ý',
+    cancelText: 'Hủy',
+    variant: 'primary',
+    resolve: null,
+  }
+  if (typeof resolver === 'function') resolver(confirmed)
+}
 const parseMaybeJsonDate = (value) => {
   if (!value) return new Date('')
   if (value instanceof Date) return value
@@ -1117,7 +1185,13 @@ const setupSwipe = (el, item, isOutside = false) => {
     if (dx > 0) {
       // Vuốt PHẢI → Xong
       if (item.status === 2) return
-      if (!confirm(`Chốt xong ca ${item.ticketId}?`)) return
+      const confirmed = await openConfirmDialog({
+        title: 'Chốt hoàn thành',
+        message: `Chốt xong ca ${item.ticketId}?`,
+        confirmText: 'Chốt ca',
+        variant: 'success',
+      })
+      if (!confirmed) return
       const newLog = appendStatusLog(item.statusLog, 2)
       const updates = { status: 2, doneDate: dateStr, statusLog: newLog }
       await supabase.from('customers').update(updates).eq('id', item.id)
@@ -1358,50 +1432,6 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- STATS PANEL ẩn - số liệu đã có trong trang Biểu đồ -->
-    <div v-if="false" class="stats-wrap">
-      <div class="stats-grid">
-        <div class="stat-card stat-blue">
-          <div class="stat-num">{{ stats.dangLamAll }}</div>
-          <div class="stat-label">Đang làm</div>
-        </div>
-        <div class="stat-card stat-yellow">
-          <div class="stat-num">{{ stats.choLKAll }}</div>
-          <div class="stat-label">Chờ linh kiện</div>
-        </div>
-        <div class="stat-card stat-green">
-          <div class="stat-num">{{ stats.tongTat }}</div>
-          <div class="stat-label">Tổng hoàn thành</div>
-        </div>
-        <div class="stat-card stat-teal">
-          <div class="stat-num">{{ stats.hoanThanhHomNay }}</div>
-          <div class="stat-label">Xong hôm nay</div>
-        </div>
-        <div class="stat-card stat-money">
-          <div class="stat-num" style="font-size:1.3rem;">{{ formatPrice(stats.doanhThuHomNay) }}</div>
-          <div class="stat-label">Doanh thu hôm nay</div>
-        </div>
-        <div class="stat-card stat-money2">
-          <div class="stat-num" style="font-size:1.3rem;">{{ formatPrice(stats.doanhThuThang) }}</div>
-          <div class="stat-label">Doanh thu tháng này</div>
-        </div>
-      </div>
-      <div class="stats-row2">
-        <div class="stat-wh">
-          <div class="stat-wh-title">Kho TDP</div>
-          <div class="stat-wh-row"><span class="s-blue">{{ stats.tdpDangLam }} đang làm</span> · <span class="s-yellow">{{ stats.tdpChoLK }} chờ LK</span> · <span class="s-green">{{ stats.tdpXong }} xong</span></div>
-        </div>
-        <div class="stat-wh">
-          <div class="stat-wh-title">Kho NV</div>
-          <div class="stat-wh-row"><span class="s-blue">{{ stats.nvDangLam }} đang làm</span> · <span class="s-yellow">{{ stats.nvChoLK }} chờ LK</span> · <span class="s-green">{{ stats.nvXong }} xong</span></div>
-        </div>
-        <div class="stat-wh">
-          <div class="stat-wh-title">Khác</div>
-          <div class="stat-wh-row"><span class="s-blue">CSVN: {{ stats.csvnTong }}</span> · <span class="s-blue">Ca ngoài: {{ stats.ngoaiTong }}</span></div>
-        </div>
-      </div>
-    </div>
-
     <!-- ADMIN PANEL -->
     <div v-if="showAdminPanel && isAdmin && !showChart" class="admin-panel-wrap">
       <AdminPanel />
@@ -1569,7 +1599,6 @@ onUnmounted(() => {
                           <span v-if="item.warehouse" class="badge" :class="getWarehouseBadgeClass(item.warehouse)">{{ getWarehouseLabel(item) }}</span>
                           <span class="badge bg-secondary">Đang xử lý</span>
                         </div>
-                        <button v-if="isAdmin" @click.stop="deleteCustomer(item.id)" class="btn btn-sm text-danger opacity-50">Xóa</button>
                       </div>
                       <div class="case-main">
                         <div class="case-primary">
@@ -1608,7 +1637,6 @@ onUnmounted(() => {
                           <span v-if="item.warehouse" class="badge" :class="getWarehouseBadgeClass(item.warehouse)">{{ getWarehouseLabel(item) }}</span>
                           <span class="badge bg-warning text-dark">Chờ linh kiện</span>
                         </div>
-                        <button v-if="isAdmin" @click.stop="deleteCustomer(item.id)" class="btn btn-sm text-danger opacity-50">Xóa</button>
                       </div>
                       <div class="case-main">
                         <div class="case-primary">
@@ -1673,7 +1701,6 @@ onUnmounted(() => {
                     <div class="card-body border-start border-5 border-primary">
                       <div class="case-head">
                         <span class="case-ticket text-primary">{{ item.ticketId }}</span>
-                        <button v-if="isAdmin" @click.stop="deleteCustomer(item.id)" class="btn btn-sm text-danger opacity-50">Xóa</button>
                       </div>
                       <div class="case-main">
                         <div class="case-primary">
@@ -1704,7 +1731,6 @@ onUnmounted(() => {
                     <div class="card-body border-start border-5 border-warning">
                       <div class="case-head">
                         <span class="case-ticket text-primary">{{ item.ticketId }}</span>
-                        <button v-if="isAdmin" @click.stop="deleteCustomer(item.id)" class="btn btn-sm text-danger opacity-50">Xóa</button>
                       </div>
                       <div class="case-main">
                         <div class="case-primary">
@@ -1732,7 +1758,6 @@ onUnmounted(() => {
                     <div class="card-body border-start border-5 border-success">
                       <div class="case-head">
                         <span class="case-ticket text-success">{{ item.ticketId }}</span>
-                        <button v-if="isAdmin" @click.stop="deleteCustomer(item.id)" class="btn btn-sm text-danger opacity-50">Xóa</button>
                       </div>
                       <div class="case-main">
                         <div class="case-primary">
@@ -1778,7 +1803,7 @@ onUnmounted(() => {
                 <button @click="detailModalTab = 'finance'" :class="['detail-tab-btn', detailModalTab === 'finance' ? 'detail-tab-btn--active' : '']">Viện phí</button>
               </div>
               <div class="row">
-                <div v-if="detailModalTab === 'info' || detailModalTab === 'finance'" class="col-md-5">
+                <div v-show="detailModalTab === 'info' || detailModalTab === 'finance'" class="col-md-5">
                   <h5 class="mb-1 fw-bold">{{ selectedCustomer.name }}</h5>
                   <a :href="'tel:'+selectedCustomer.phone" class="text-secondary fw-bold mb-2 d-block text-decoration-none">{{ selectedCustomer.phone }}</a>
                   <p v-if="selectedCustomer.warehouse"><strong>Kho:</strong> {{ selectedCustomer.warehouse }}</p>
@@ -1830,7 +1855,7 @@ onUnmounted(() => {
                     </div>
                   </div>
                   <!-- GIÁ TIỀN -->
-                  <div v-if="detailModalTab === 'finance'" class="mt-3 price-block">
+                  <div v-show="detailModalTab === 'finance'" class="mt-3 price-block">
                     <div class="d-flex justify-content-between align-items-center mb-1">
                       <label class="form-label fw-bold mb-0">Phí sửa chữa:</label>
                       <button v-if="isAdmin" @click="openPriceEditor(selectedCustomer)" class="btn btn-sm btn-outline-success fw-bold">+ Linh kiện / Giá</button>
@@ -1851,9 +1876,10 @@ onUnmounted(() => {
                     </div>
                   </div>
                 </div>
-                <div v-if="detailModalTab === 'media' || detailModalTab === 'finance'" class="col-md-7">
+                <div v-show="detailModalTab === 'media' || detailModalTab === 'finance'" class="col-md-7">
                   <h6 class="mb-3">Ảnh &amp; Video</h6>
-                  <div v-if="!selectedCustomer.media?.length" class="text-muted small mb-3">Đang tải ảnh...</div>
+                  <div v-if="isCustomerMediaLoading" class="text-muted small mb-3">Đang tải ảnh...</div>
+                  <div v-else-if="!selectedCustomer.media?.length" class="text-muted small mb-3">Chưa có ảnh/video</div>
                   <div class="media-grid">
                     <div v-for="(m, idx) in selectedCustomer.media || []" :key="idx" class="media-item position-relative">
                       <img v-if="m.type!=='video'" :src="m.data" @click="openMediaModal(m)" alt="Ảnh" style="cursor:pointer;" loading="lazy">
@@ -1901,7 +1927,7 @@ onUnmounted(() => {
                 <button @click="outsideModalTab = 'finance'" :class="['detail-tab-btn', outsideModalTab === 'finance' ? 'detail-tab-btn--active' : '']">Viện phí</button>
               </div>
               <div class="row">
-                <div v-if="outsideModalTab === 'info' || outsideModalTab === 'finance'" class="col-md-5">
+                <div v-show="outsideModalTab === 'info' || outsideModalTab === 'finance'" class="col-md-5">
                   <h5 class="mb-1 fw-bold">{{ selectedOutside.name }}</h5>
                   <a :href="'tel:'+selectedOutside.phone" class="text-secondary fw-bold mb-3 d-block text-decoration-none">{{ selectedOutside.phone }}</a>
                   <p><strong>Model:</strong> {{ selectedOutside.model }}</p>
@@ -1977,7 +2003,7 @@ onUnmounted(() => {
                     </div>
                   </div>
                   <!-- GIÁ TIỀN Ca Ngoài -->
-                  <div v-if="outsideModalTab === 'finance'" class="mt-3 price-block">
+                  <div v-show="outsideModalTab === 'finance'" class="mt-3 price-block">
                     <div class="d-flex justify-content-between align-items-center mb-1">
                       <label class="form-label fw-bold mb-0">Phí sửa chữa:</label>
                       <button v-if="isAdmin" @click="openPriceEditor(selectedOutside)" class="btn btn-sm btn-outline-success fw-bold">+ Linh kiện / Giá</button>
@@ -1998,9 +2024,10 @@ onUnmounted(() => {
                     </div>
                   </div>
                 </div>
-                <div v-if="outsideModalTab === 'media' || outsideModalTab === 'finance'" class="col-md-7">
+                <div v-show="outsideModalTab === 'media' || outsideModalTab === 'finance'" class="col-md-7">
                   <h6 class="mb-3">Ảnh &amp; Video</h6>
-                  <div v-if="!selectedOutside.media?.length" class="text-muted small mb-3">Đang tải ảnh...</div>
+                  <div v-if="isOutsideMediaLoading" class="text-muted small mb-3">Đang tải ảnh...</div>
+                  <div v-else-if="!selectedOutside.media?.length" class="text-muted small mb-3">Chưa có ảnh/video</div>
                   <div class="media-grid">
                     <div v-for="(m, idx) in selectedOutside.media || []" :key="idx" class="media-item position-relative">
                       <img v-if="m.type!=='video'" :src="m.data" @click="openMediaModal(m)" alt="Ảnh" style="cursor:pointer;" loading="lazy">
@@ -2244,7 +2271,7 @@ onUnmounted(() => {
     </div>
 
     <button
-      v-if="!showChart && isLoggedIn && !showDetailModal && !showOutsideDetailModal && !showModal && !showEditModal && !showLkForm"
+      v-if="!showChart && isLoggedIn && !showDetailModal && !showOutsideDetailModal && !showModal && !showEditModal && !showLkForm && !showQuickCreateModal && !showOutsideForm && !showTreModal && !showRouteModal && !showChoLkTreModal && !confirmDialog.visible"
       @click="openCreateCaseModal"
       class="fab-create"
       :title="currentType === 'OUTSIDE' ? 'Tạo ca ngoài' : 'Tạo / dán ca mới'"
@@ -2388,6 +2415,24 @@ onUnmounted(() => {
         </div>
       </div>
 
+      <div v-if="confirmDialog.visible" class="modal fade show" tabindex="-1" style="display:block;background:rgba(0,0,0,0.55);">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header" :class="`confirm-header confirm-header--${confirmDialog.variant}`">
+              <h5 class="modal-title">{{ confirmDialog.title }}</h5>
+              <button type="button" class="btn-close btn-close-white" @click="closeConfirmDialog(false)"></button>
+            </div>
+            <div class="modal-body">
+              <p class="mb-0">{{ confirmDialog.message }}</p>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" @click="closeConfirmDialog(false)">{{ confirmDialog.cancelText }}</button>
+              <button type="button" :class="['btn fw-bold', `btn-${confirmDialog.variant}`]" @click="closeConfirmDialog(true)">{{ confirmDialog.confirmText }}</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
   </div>
 </template>
 
@@ -2516,9 +2561,17 @@ onUnmounted(() => {
 .media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 0.75rem; margin: 1rem 0; }
 .media-item { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; }
 .media-item img, .media-item video { width: 100%; height: 100%; object-fit: cover; cursor: pointer; }
-.media-del { position: absolute; top: -8px; right: -8px; background: #ef4444; color: #fff; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 16px; cursor: pointer; z-index: 10; font-weight: bold; box-shadow: 0 2px 6px rgba(0,0,0,0.3); border: 2px solid #fff; }
+.media-del { position: absolute; top: 4px; right: 4px; background: #ef4444; color: #fff; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 16px; cursor: pointer; z-index: 10; font-weight: bold; box-shadow: 0 2px 6px rgba(0,0,0,0.3); border: 2px solid #fff; }
 .media-add { aspect-ratio: 1; border: 2px dashed #cbd5e0; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #94a3b8; font-size: 24px; transition: all .2s; }
 .media-add:hover { border-color: #3b82f6; background: #eff6ff; color: #3b82f6; }
+.warehouse-badge { color: #0f172a; background: #e2e8f0; border: 1px solid #cbd5e1; }
+.warehouse-badge--tdp { background: #e2e8f0; border-color: #cbd5e1; }
+.warehouse-badge--nv { background: #f1f5f9; border-color: #cbd5e1; }
+.confirm-header { color: #fff; }
+.confirm-header--primary { background: #2563eb; }
+.confirm-header--success { background: #059669; }
+.confirm-header--warning { background: #d97706; }
+.confirm-header--danger { background: #dc2626; }
 
 /* ── Date pill ────────────────────────────────────────────── */
 .date-pill { background: linear-gradient(135deg, #10b981, #059669); color: #fff; padding: 0.5rem 1rem; border-radius: 20px; font-weight: 600; font-size: 0.9rem; }
@@ -2686,34 +2739,4 @@ onUnmounted(() => {
 .price-display { display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; }
 .price-value { font-size: 1.3rem; font-weight: 800; color: #16a34a; }
 .lk-edit-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid #e5e7eb; font-size: 0.9rem; }
-.stat-money  { background: #fef9c3; }
-.stat-money2 { background: #fef3c7; }
-.stat-money .stat-num  { color: #854d0e; }
-.stat-money2 .stat-num { color: #78350f; }
-
-/* ── Stats Panel ──────────────────────────────────────────── */
-.stats-wrap { max-width: 1450px; margin: 0 auto; background: #fff; border-bottom: 2px solid #e2e8f0; padding: 1rem 1.5rem; }
-.stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem; }
-.stat-card { border-radius: 14px; padding: 1rem; text-align: center; }
-.stat-blue   { background: #dbeafe; }
-.stat-yellow { background: #fef3c7; }
-.stat-green  { background: #d1fae5; }
-.stat-teal   { background: #ccfbf1; }
-.stat-num  { font-size: 2rem; font-weight: 800; line-height: 1; }
-.stat-blue .stat-num   { color: #1d4ed8; }
-.stat-yellow .stat-num { color: #92400e; }
-.stat-green .stat-num  { color: #065f46; }
-.stat-teal .stat-num   { color: #0f766e; }
-.stat-label { font-size: 0.78rem; font-weight: 600; color: #475569; margin-top: 0.25rem; }
-.stats-row2 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
-.stat-wh { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 0.65rem 1rem; }
-.stat-wh-title { font-weight: 700; font-size: 0.85rem; color: #1e293b; margin-bottom: 0.3rem; }
-.stat-wh-row { font-size: 0.8rem; }
-.s-blue   { color: #1d4ed8; font-weight: 600; }
-.s-yellow { color: #92400e; font-weight: 600; }
-.s-green  { color: #065f46; font-weight: 600; }
-@media (max-width: 480px) {
-  .stats-grid { grid-template-columns: repeat(2, 1fr); }
-  .stats-row2 { grid-template-columns: 1fr; }
-}
 </style>
