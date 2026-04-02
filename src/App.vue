@@ -2626,6 +2626,15 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+:global(html),
+:global(body),
+:global(#app) {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  overflow-x: hidden;
+}
+
 /* ── Chart overlay ───────────────────────────────────────── */
 .chart-overlay { position: fixed; inset: 0; background: #f1f5f9; z-index: 500; overflow-y: auto; }
 .chart-overlay-header { background: #1e293b; padding: 0.6rem 1rem; position: sticky; top: 0; z-index: 10; }
@@ -2643,18 +2652,21 @@ onUnmounted(() => {
 .topbar {
   display: flex; justify-content: space-between; align-items: center;
   background: #1e293b; color: #fff;
+  width: 100%; max-width: 100%;
   padding: 0.6rem 1.25rem; position: sticky; top: 0; z-index: 100;
   box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  box-sizing: border-box;
+  overflow-x: clip;
 }
-.topbar-left  { display: flex; align-items: center; gap: 0.6rem; }
+.topbar-left  { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
 .topbar-logo  { font-size: 1.4rem; }
 .topbar-appname { font-weight: 800; font-size: 1rem; letter-spacing: -0.02em; }
 .role-chip    { padding: 0.2rem 0.65rem; border-radius: 20px; font-size: 0.75rem; font-weight: 700; }
 .role-admin   { background: #fef3c7; color: #92400e; }
 .role-nv      { background: #dbeafe; color: #1d4ed8; }
 .offline-chip { background: #fee2e2; color: #991b1b; padding: 0.2rem 0.55rem; border-radius: 20px; font-size: 0.72rem; font-weight: 700; }
-.topbar-right { display: flex; align-items: center; gap: 0.6rem; }
-.topbar-search { min-width: 260px; max-width: 320px; }
+.topbar-right { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
+.topbar-search { min-width: 260px; max-width: 320px; width: 100%; flex: 1 1 260px; }
 .topbar-user  { font-size: 0.85rem; color: #94a3b8; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btn-topbar   { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 0.35rem 0.75rem; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all .2s; }
 .btn-topbar:hover { background: rgba(255,255,255,0.2); }
@@ -2680,8 +2692,8 @@ onUnmounted(() => {
 @keyframes slideIn { from { opacity:0; transform:translateX(100%); } to { opacity:1; transform:translateX(0); } }
 
 /* ── Layout ───────────────────────────────────────────────── */
-.page-wrap { min-height: 100vh; background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); font-family: system-ui, -apple-system, sans-serif; }
-.layout { max-width: 1450px; margin: 0 auto; padding: 1.5rem 1rem; display: flex; flex-direction: column; gap: 1.5rem; }
+.page-wrap { min-height: 100vh; width: 100%; max-width: 100vw; overflow-x: hidden; background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); font-family: system-ui, -apple-system, sans-serif; }
+.layout { width: 100%; max-width: 1450px; margin: 0 auto; padding: 1.5rem 1rem; display: flex; flex-direction: column; gap: 1.5rem; box-sizing: border-box; }
 .control-card, .cases-section { background: #fff; border-radius: 20px; padding: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,.05), 0 2px 4px -1px rgba(0,0,0,.1); border: 1px solid #e2e8f0; }
 .control-card--sticky { position: sticky; top: 64px; z-index: 40; }
 .control-card { transition: padding .22s ease, border-radius .22s ease, box-shadow .22s ease; }
@@ -2838,8 +2850,8 @@ onUnmounted(() => {
   .topbar-appname { font-size: 0.8rem; }
   .role-chip { font-size: 0.62rem; padding: 0.12rem 0.4rem; }
   .topbar-user { display: none; }
-  .topbar-right { gap: 0.3rem; flex-shrink: 0; }
-  .topbar-search { min-width: 120px; max-width: 150px; font-size: 0.8rem; padding: 0.35rem 0.55rem; }
+  .topbar-right { gap: 0.3rem; flex: 1; justify-content: flex-end; }
+  .topbar-search { min-width: 0; max-width: none; flex: 1 1 0; font-size: 0.8rem; padding: 0.35rem 0.55rem; }
   .btn-topbar { padding: 0.3rem 0.45rem; font-size: 1rem; border-radius: 6px; white-space: nowrap; min-width: 36px; }
   .btn-text { display: none; }
   .topbar-badge { margin-left: 0; position: absolute; top: -5px; right: -5px; }
@@ -2852,7 +2864,7 @@ onUnmounted(() => {
   .media-viewer-download { right: 12px; bottom: 12px; left: 12px; text-align: center; }
 }
 @media (max-width: 768px) {
-  .layout { padding: 1rem 0.5rem; gap: 1rem; }
+  .layout { width: 100%; max-width: 100%; padding: 1rem 0.5rem; gap: 1rem; }
   .control-card, .cases-section { padding: 1rem; border-radius: 16px; }
   .control-card--sticky { top: 56px; }
   .control-card--mobile-collapsed { padding: 0.7rem 0.85rem; border-radius: 14px; box-shadow: 0 8px 18px rgba(15,23,42,.1); }
