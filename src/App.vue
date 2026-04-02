@@ -31,6 +31,7 @@ window.addEventListener('offline', () => { isOnline.value = false; showToast('M�
 
 // ── SUPABASE ──────────────────────────────────────────────────
 const supabase = getSupabase()
+const globalSearchQuery = ref('')
 const searchQuery = ref('')
 const historySearchQuery = ref('')
 const completedDateFrom = ref('')
@@ -259,6 +260,9 @@ const detailStatusDraft = ref(0)
 const outsideStatusDraft = ref(0)
 const isStatusActionLoading = ref(false)
 const isMobileControlCollapsed = ref(false)
+const sortOption = ref('newest')
+const createdDateFilter = ref('all')
+const partSearchQuery = ref('')
 const isCustomerMediaLoading = ref(false)
 const isOutsideMediaLoading = ref(false)
 const confirmDialog = ref({
@@ -533,6 +537,13 @@ const openCreateCaseModal = () => {
 }
 const openMediaModal  = (media) => { modalMedia.value = media; showModal.value = true; document.body.style.overflow = 'hidden' }
 const closeMediaModal = () => { showModal.value = false; modalMedia.value = null; document.body.style.overflow = '' }
+const openCustomerFromSearch = (item) => {
+  if (item.ticketId?.startsWith('NGOAI')) openOutsideDetailModal(item)
+  else openDetailModalFull(item)
+}
+watch(showPartModal, (visible) => {
+  if (!visible) partSearchQuery.value = ''
+})
 
 // ── NAVIGATION ────────────────────────────────────────────────
 const backToTypeToggle = () => { showWarehouse.value = false; currentType.value = 'ASVN' }
@@ -540,14 +551,16 @@ const selectWarehouse  = (wh) => {
   if (hasLockedWarehouse.value) {
     currentWarehouse.value = assignedWarehouse.value
     searchQuery.value = ''
+    globalSearchQuery.value = ''
     return
   }
-  currentWarehouse.value = wh; searchQuery.value = ''
+  currentWarehouse.value = wh; searchQuery.value = ''; globalSearchQuery.value = ''
 }
 const selectType = (type) => {
   currentType.value = type; showTab.value = 'danglam'; outsideTab.value = 'danglam'
-  searchQuery.value = ''; historySearchQuery.value = ''
+  searchQuery.value = ''; historySearchQuery.value = ''; globalSearchQuery.value = ''
   completedDateFrom.value = ''; completedDateTo.value = ''
+  createdDateFilter.value = 'all'
   if (type === 'ASVN') {
     showWarehouse.value = true
     syncWarehouseByRole()
@@ -580,6 +593,42 @@ const stats = computed(() => {
 })
 
 // ── COMPUTED ──────────────────────────────────────────────────
+const getComparableDate = (value) => {
+  if (!value) return null
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+const getStatusLabel = (status) => STATUS_LABEL[status] || 'Không rõ'
+const getTypeLabel = (ticketId = '') => (
+  ticketId.startsWith('ASVN') ? 'ASVN'
+    : ticketId.startsWith('CSVN') ? 'CSVN'
+      : ticketId.startsWith('NGOAI') ? 'Ca ngoài'
+        : 'Khác'
+)
+const accessScopedCustomers = computed(() => (
+  customers.value.filter((item) => {
+    if (!hasLockedWarehouse.value) return true
+    if (!item.ticketId?.startsWith('ASVN')) return true
+    return item.warehouse === assignedWarehouse.value
+  })
+))
+const globalSearchResults = computed(() => {
+  const q = globalSearchQuery.value.trim().toLowerCase()
+  if (!q) return []
+  return accessScopedCustomers.value
+    .filter((c) =>
+      c.name?.toLowerCase().includes(q) || c.phone?.includes(q) ||
+      c.ticketId?.toLowerCase().includes(q) || c.model?.toLowerCase().includes(q) ||
+      c.replacedPart?.toLowerCase().includes(q) || c.serial?.toLowerCase().includes(q) ||
+      c.issue?.toLowerCase().includes(q) || c.note?.toLowerCase().includes(q)
+    )
+    .sort((a, b) => {
+      const aTime = getComparableDate(a.createdAt)?.getTime() || 0
+      const bTime = getComparableDate(b.createdAt)?.getTime() || 0
+      return bTime - aTime
+    })
+})
+const isGlobalSearchActive = computed(() => !!globalSearchQuery.value.trim())
 const filteredCustomers = computed(() => {
   let f = customers.value
   if (currentType.value === 'ASVN')         f = f.filter(c => c.ticketId?.startsWith('ASVN'))
@@ -602,8 +651,6 @@ const filteredCustomers = computed(() => {
   )
 })
 
-const dangLam     = computed(() => filteredCustomers.value.filter(c => c.status === 0))
-const choLinhKien = computed(() => filteredCustomers.value.filter(c => c.status === 1))
 const parseDoneDateValue = (value) => {
   if (!value || typeof value !== 'string') return null
   const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
@@ -611,6 +658,43 @@ const parseDoneDateValue = (value) => {
   const [, dd, mm, yyyy] = match
   return `${yyyy}-${mm}-${dd}`
 }
+const matchesCreatedDateFilter = (item) => {
+  if (createdDateFilter.value === 'all') return true
+  const createdAt = getComparableDate(item.createdAt)
+  if (!createdAt) return false
+  const now = new Date()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  if (createdDateFilter.value === 'today') return createdAt >= todayStart
+  if (createdDateFilter.value === 'week') {
+    const weekday = todayStart.getDay()
+    const diff = weekday === 0 ? 6 : weekday - 1
+    const weekStart = new Date(todayStart)
+    weekStart.setDate(todayStart.getDate() - diff)
+    return createdAt >= weekStart
+  }
+  return true
+}
+const sortItems = (items, dateField = 'createdAt') => {
+  const list = [...items]
+  if (sortOption.value === 'warehouse') {
+    return list.sort((a, b) => {
+      const warehouseOrder = { TDP: 0, NV: 1 }
+      const warehouseDiff = (warehouseOrder[a.warehouse] ?? 99) - (warehouseOrder[b.warehouse] ?? 99)
+      if (warehouseDiff !== 0) return warehouseDiff
+      const aTime = getComparableDate(a[dateField])?.getTime() || 0
+      const bTime = getComparableDate(b[dateField])?.getTime() || 0
+      return bTime - aTime
+    })
+  }
+  const direction = sortOption.value === 'oldest' ? 1 : -1
+  return list.sort((a, b) => {
+    const aTime = getComparableDate(a[dateField])?.getTime() || 0
+    const bTime = getComparableDate(b[dateField])?.getTime() || 0
+    return (aTime - bTime) * direction
+  })
+}
+const dangLam     = computed(() => sortItems(filteredCustomers.value.filter(c => c.status === 0).filter(matchesCreatedDateFilter)))
+const choLinhKien = computed(() => sortItems(filteredCustomers.value.filter(c => c.status === 1)))
 const hoanThanh   = computed(() => {
   const q = historySearchQuery.value.toLowerCase()
   let items = filteredCustomers.value.filter(c => c.status === 2)
@@ -631,12 +715,22 @@ const hoanThanh   = computed(() => {
     c.ticketId?.toLowerCase().includes(q) || c.model?.toLowerCase().includes(q) ||
     c.replacedPart?.toLowerCase().includes(q)
   )
+  items = sortItems(items, 'createdAt')
   const groups = {}
   items.forEach(item => { const d = item.doneDate || 'N/A'; if (!groups[d]) groups[d] = []; groups[d].push(item) })
-  return groups
+  const orderedEntries = Object.entries(groups).sort((a, b) => {
+    const aKey = parseDoneDateValue(a[0])
+    const bKey = parseDoneDateValue(b[0])
+    if (!aKey && !bKey) return 0
+    if (!aKey) return 1
+    if (!bKey) return -1
+    if (sortOption.value === 'oldest') return aKey.localeCompare(bKey)
+    return bKey.localeCompare(aKey)
+  })
+  return Object.fromEntries(orderedEntries)
 })
-const outsideDangLam     = computed(() => filteredCustomers.value.filter(c => c.status === 0))
-const outsideChoLinhKien = computed(() => filteredCustomers.value.filter(c => c.status === 1))
+const outsideDangLam     = computed(() => sortItems(filteredCustomers.value.filter(c => c.status === 0).filter(matchesCreatedDateFilter)))
+const outsideChoLinhKien = computed(() => sortItems(filteredCustomers.value.filter(c => c.status === 1)))
 const outsideHoanThanh   = computed(() => {
   let items = filteredCustomers.value.filter(c => c.status === 2)
   if (completedDateFrom.value) {
@@ -651,7 +745,7 @@ const outsideHoanThanh   = computed(() => {
       return doneDate && doneDate <= completedDateTo.value
     })
   }
-  return items
+  return sortItems(items, 'createdAt')
 })
 // Ca chờ LK trễ > 3 ngày
 const choLkTreList = computed(() => {
@@ -673,6 +767,11 @@ const treCaList = computed(() => {
 
 const getWarehouseLabel     = (item) => item.warehouse === 'TDP' ? 'Kho TDP' : item.warehouse === 'NV' ? 'Kho NV' : ''
 const getWarehouseBadgeClass = (wh) => wh === 'TDP' ? 'warehouse-badge warehouse-badge--tdp' : 'warehouse-badge warehouse-badge--nv'
+const filteredLinhKienList = computed(() => {
+  const q = partSearchQuery.value.trim().toLowerCase()
+  if (!q) return linhKienList.value
+  return linhKienList.value.filter((part) => part.toLowerCase().includes(q))
+})
 
 // ── CA NGOÀI ──────────────────────────────────────────────────
 const openOutsideForm  = () => { showOutsideForm.value = true; outsideForm.value = { name: '', phone: '', brand: '', model: '', issue: '', note: '' }; outsideRawInput.value = '' }
@@ -1409,6 +1508,12 @@ onUnmounted(() => {
         <span v-if="!isOnline" class="offline-chip">Offline</span>
       </div>
       <div class="topbar-right">
+        <input
+          v-model="globalSearchQuery"
+          type="text"
+          class="form-control topbar-search"
+          placeholder="Tìm mã ca, SĐT, tên khách..."
+        >
         <span class="topbar-user">{{ userName }}</span>
         <button @click="openTreModal" class="btn-topbar btn-topbar--alert">
           <span class="btn-text">Ca trễ</span>
@@ -1511,10 +1616,29 @@ onUnmounted(() => {
               <button @click="openRouteModal" class="btn btn-info fw-bold">HÀNH TRÌNH</button>
               <input type="text" v-model="searchQuery" class="form-control" placeholder="Tìm kiếm nhanh...">
             </div>
+            <div class="control-subfilters">
+              <select v-model="createdDateFilter" class="form-select">
+                <option value="all">Tất cả ngày tạo</option>
+                <option value="today">Tạo hôm nay</option>
+                <option value="week">Tuần này</option>
+              </select>
+              <select v-model="sortOption" class="form-select">
+                <option value="newest">Mới nhất lên đầu</option>
+                <option value="oldest">Cũ nhất lên đầu</option>
+                <option value="warehouse">Theo kho TDP → NV</option>
+              </select>
+            </div>
           </div>
 
           <div v-else-if="showTab === 'cholinkien'" class="control-body" @click.stop>
             <input v-model="searchQuery" type="text" class="form-control" placeholder="Tìm theo tên, SĐT, mã ca, model, serial, linh kiện...">
+            <div class="control-subfilters">
+              <select v-model="sortOption" class="form-select">
+                <option value="newest">Mới nhất lên đầu</option>
+                <option value="oldest">Cũ nhất lên đầu</option>
+                <option value="warehouse">Theo kho TDP → NV</option>
+              </select>
+            </div>
           </div>
 
           <div v-else-if="showTab === 'hoanthanh'" class="control-body" @click.stop>
@@ -1523,6 +1647,11 @@ onUnmounted(() => {
                 placeholder="Tìm trong lịch sử...">
               <input type="date" v-model="completedDateFrom" class="form-control mb-2" title="Từ ngày">
               <input type="date" v-model="completedDateTo" class="form-control mb-2" title="Đến ngày">
+              <select v-model="sortOption" class="form-select mb-2">
+                <option value="newest">Mới nhất lên đầu</option>
+                <option value="oldest">Cũ nhất lên đầu</option>
+                <option value="warehouse">Theo kho TDP → NV</option>
+              </select>
               <template v-if="isAdmin">
                 <div v-if="showWarehouse" class="d-flex gap-1 w-100">
                   <button @click="exportHoanThanhByWarehouse('TDP')" class="btn btn-outline-primary fw-bold flex-grow-1">Xuất TDP</button>
@@ -1544,6 +1673,18 @@ onUnmounted(() => {
             <button @click="openOutsideForm" class="btn btn-success fw-bold btn-sm">+ Tạo ca</button>
           </div>
           <input type="text" v-model="searchQuery" class="form-control mt-1" placeholder="Tìm kiếm nhanh...">
+          <div class="control-subfilters mt-2">
+            <select v-if="outsideTab === 'danglam'" v-model="createdDateFilter" class="form-select">
+              <option value="all">Tất cả ngày tạo</option>
+              <option value="today">Tạo hôm nay</option>
+              <option value="week">Tuần này</option>
+            </select>
+            <select v-model="sortOption" class="form-select">
+              <option value="newest">Mới nhất lên đầu</option>
+              <option value="oldest">Cũ nhất lên đầu</option>
+              <option value="warehouse">Theo kho TDP → NV</option>
+            </select>
+          </div>
           <div v-if="outsideTab === 'hoanthanh'" class="d-flex gap-2 flex-wrap mt-2">
             <input type="date" v-model="completedDateFrom" class="form-control">
             <input type="date" v-model="completedDateTo" class="form-control">
@@ -1577,8 +1718,47 @@ onUnmounted(() => {
           </h2>
         </div>
 
+        <div v-if="isGlobalSearchActive">
+          <div v-if="globalSearchResults.length">
+            <h5 class="mb-3">Kết quả tìm kiếm ({{ globalSearchResults.length }})</h5>
+            <div class="case-strip">
+              <div
+                v-for="item in globalSearchResults"
+                :key="item.id"
+                class="case-card"
+                @click="openCustomerFromSearch(item)"
+                style="cursor:pointer;"
+              >
+                <div class="card border-0 shadow-sm h-100">
+                  <div class="card-body border-start border-5 border-info">
+                    <div class="case-head">
+                      <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="case-ticket text-primary">{{ item.ticketId }}</span>
+                        <span class="badge bg-dark-subtle text-dark">{{ getTypeLabel(item.ticketId) }}</span>
+                        <span class="badge" :class="getWarehouseBadgeClass(item.warehouse)">{{ getWarehouseLabel(item) || 'Không kho' }}</span>
+                        <span class="badge" :class="item.status === 0 ? 'bg-secondary' : item.status === 1 ? 'bg-warning text-dark' : 'bg-success'">{{ getStatusLabel(item.status) }}</span>
+                      </div>
+                    </div>
+                    <div class="case-main">
+                      <div class="case-primary">
+                        <div class="case-customer">{{ item.name }}</div>
+                        <a :href="'tel:'+item.phone" @click.stop class="case-phone text-decoration-none">{{ item.phone }}</a>
+                      </div>
+                      <div class="case-model">Model: {{ item.model }}</div>
+                      <div class="case-issue">Lỗi: {{ item.issue }}</div>
+                      <div class="case-meta">Ngày tạo: {{ formatDate(item.createdAt) }}</div>
+                      <div class="case-part">Linh kiện: {{ item.replacedPart || 'Chưa có' }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="text-center text-muted py-5">Không có ca nào khớp từ khóa</div>
+        </div>
+
         <!-- ── ASVN / CSVN ── -->
-        <div v-if="currentType !== 'OUTSIDE'">
+        <div v-else-if="currentType !== 'OUTSIDE'">
 
           <!-- Đang làm -->
           <div v-if="showTab === 'danglam'">
@@ -2153,13 +2333,22 @@ onUnmounted(() => {
               <button type="button" class="btn-close" @click="closePartModal"></button>
             </div>
             <div class="modal-body">
-              <div v-if="!showCustomInput" class="list-group">
-                <button v-for="part in linhKienList" :key="part"
+              <div v-if="!showCustomInput">
+                <input
+                  v-model="partSearchQuery"
+                  type="text"
+                  class="form-control mb-3"
+                  placeholder="Tìm linh kiện..."
+                >
+                <div class="list-group">
+                  <button v-for="part in filteredLinhKienList" :key="part"
                   class="list-group-item list-group-item-action"
                   :class="{ 'list-group-item-warning fw-bold': part === 'Khác' }"
                   @click="selectPart(part)">
                   {{ part === 'Khác' ? 'Khác (tự nhập)' : part }}
-                </button>
+                  </button>
+                </div>
+                <div v-if="!filteredLinhKienList.length" class="text-muted small mt-3">Không tìm thấy linh kiện phù hợp.</div>
               </div>
               <div v-else>
                 <p class="text-muted mb-3">Nhập tên linh kiện:</p>
@@ -2465,6 +2654,7 @@ onUnmounted(() => {
 .role-nv      { background: #dbeafe; color: #1d4ed8; }
 .offline-chip { background: #fee2e2; color: #991b1b; padding: 0.2rem 0.55rem; border-radius: 20px; font-size: 0.72rem; font-weight: 700; }
 .topbar-right { display: flex; align-items: center; gap: 0.6rem; }
+.topbar-search { min-width: 260px; max-width: 320px; }
 .topbar-user  { font-size: 0.85rem; color: #94a3b8; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btn-topbar   { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 0.35rem 0.75rem; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all .2s; }
 .btn-topbar:hover { background: rgba(255,255,255,0.2); }
@@ -2528,6 +2718,7 @@ onUnmounted(() => {
 .control-body-note { font-size: 0.82rem; color: #64748b; }
 .control-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-top: 1rem; }
 .control-actions input { grid-column: span 3; padding: 0.875rem; font-size: 1rem; }
+.control-subfilters { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; margin-top: 0.85rem; }
 
 /* ── Cases ────────────────────────────────────────────────── */
 .section-header { margin-bottom: 1.5rem; text-align: center; }
@@ -2648,6 +2839,7 @@ onUnmounted(() => {
   .role-chip { font-size: 0.62rem; padding: 0.12rem 0.4rem; }
   .topbar-user { display: none; }
   .topbar-right { gap: 0.3rem; flex-shrink: 0; }
+  .topbar-search { min-width: 120px; max-width: 150px; font-size: 0.8rem; padding: 0.35rem 0.55rem; }
   .btn-topbar { padding: 0.3rem 0.45rem; font-size: 1rem; border-radius: 6px; white-space: nowrap; min-width: 36px; }
   .btn-text { display: none; }
   .topbar-badge { margin-left: 0; position: absolute; top: -5px; right: -5px; }
@@ -2698,6 +2890,7 @@ onUnmounted(() => {
   .case-primary { flex-direction: column; align-items: flex-start; gap: 0.2rem; }
   .status-editor-row { flex-direction: column; align-items: stretch; }
   .control-body-header { align-items: flex-start; }
+  .control-subfilters { grid-template-columns: 1fr; }
   .fab-create { right: 0.75rem; bottom: 0.75rem; width: 54px; height: 54px; }
 }
 @media (min-width: 1200px) {
