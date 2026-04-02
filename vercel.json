@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://belongs-districts-tablets-reported.trycloudflare.com/api/:match*"
+      "destination": "https://requires-highways-dui-textbook.trycloudflare.com/api/:match*"
     },
     {
       "source": "/media/(.*)",
-      "destination": "https://belongs-districts-tablets-reported.trycloudflare.com/media/$1"
+      "destination": "https://requires-highways-dui-textbook.trycloudflare.com/media/$1"
     }
   ]
 }
