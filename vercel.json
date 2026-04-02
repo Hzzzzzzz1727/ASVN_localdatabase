@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://requires-highways-dui-textbook.trycloudflare.com/api/:match*"
+      "destination": "https://switches-incentives-combination-ivory.trycloudflare.com/api/:match*"
     },
     {
       "source": "/media/(.*)",
-      "destination": "https://requires-highways-dui-textbook.trycloudflare.com/media/$1"
+      "destination": "https://switches-incentives-combination-ivory.trycloudflare.com/media/$1"
     }
   ]
 }
