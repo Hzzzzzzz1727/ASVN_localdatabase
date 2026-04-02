@@ -608,6 +608,7 @@ const getTypeLabel = (ticketId = '') => (
       : ticketId.startsWith('NGOAI') ? 'Ca ngoài'
         : 'Khác'
 )
+const shouldShowWarehouse = (item) => !!item?.warehouse && !item?.ticketId?.startsWith('NGOAI')
 const accessScopedCustomers = computed(() => (
   customers.value.filter((item) => {
     if (!hasLockedWarehouse.value) return true
@@ -833,7 +834,7 @@ const saveOutsideCa = async () => {
     address: 'Ca ngoài - không có địa chỉ', issue: outsideForm.value.issue,
     media: [], folderDrive: '', status: 0, replacedPart: 'Chưa có linh kiện thay',
     note: outsideForm.value.note?.trim() || '',
-    doneDate: null, createdAt: now.toISOString(), warehouse: 'TDP',
+    doneDate: null, createdAt: now.toISOString(), warehouse: '',
     warranty_months: null, warranty_start_at: null, warranty_expires_at: null
   }
   const { error } = await supabase.from('customers').insert([newCa])
@@ -1245,7 +1246,7 @@ const exportToExcel = (data, fileName) => {
   if (!canExport.value) { showToast('Bạn không có quyền xuất Excel!', 'error'); return }
   if (!data.length) return showToast('Không có dữ liệu!', 'error')
   const rows = data.map(item => ({
-    'Kho': item.warehouse || 'N/A', 'Mã Ca': item.ticketId,
+    'Kho': item.ticketId?.startsWith('NGOAI') ? '' : (item.warehouse || 'N/A'), 'Mã Ca': item.ticketId,
     'Ngày Hoàn thành': item.doneDate, 'Khách Hàng': item.name,
     'SĐT': item.phone, 'Model': item.model, 'Địa Chỉ': item.address,
     'Lỗi': item.issue, 'Linh kiện thay': item.replacedPart
@@ -1734,7 +1735,7 @@ onUnmounted(() => {
                       <div class="d-flex align-items-center gap-2 flex-wrap">
                         <span class="case-ticket text-primary">{{ item.ticketId }}</span>
                         <span class="badge bg-dark-subtle text-dark">{{ getTypeLabel(item.ticketId) }}</span>
-                        <span class="badge" :class="getWarehouseBadgeClass(item.warehouse)">{{ getWarehouseLabel(item) || 'Không kho' }}</span>
+                        <span v-if="shouldShowWarehouse(item)" class="badge" :class="getWarehouseBadgeClass(item.warehouse)">{{ getWarehouseLabel(item) }}</span>
                         <span class="badge" :class="item.status === 0 ? 'bg-secondary' : item.status === 1 ? 'bg-warning text-dark' : 'bg-success'">{{ getStatusLabel(item.status) }}</span>
                       </div>
                     </div>
