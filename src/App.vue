@@ -874,6 +874,13 @@ const dongCa = async (item) => {
   showToast('Đã chốt ca hoàn thành!', 'success')
 }
 const revertToDangLam = async (item) => {
+  const confirmed = await openConfirmDialog({
+    title: 'Hoàn lại đang làm',
+    message: `Đưa ca ${item.ticketId} từ hoàn thành về đang làm? Dữ liệu chốt ca sẽ bị xóa.`,
+    confirmText: 'Hoàn lại',
+    variant: 'warning',
+  })
+  if (!confirmed) return
   const updates = { status: 0, doneDate: null, price: 0, lkItems: [], replacedPart: 'Chưa có' }
   await supabase.from('customers').update(updates).eq('id', item.id)
   updateLocalCustomer(item.id, updates)
@@ -1026,6 +1033,19 @@ const updateLocalMedia = (itemId, media) => {
   if (showOutsideDetailModal.value && selectedOutside.value?.id === itemId)
     selectedOutside.value = { ...selectedOutside.value, media }
 }
+const revokePreviewMediaUrls = (media = []) => {
+  media.forEach((m) => {
+    if (m?.source === 'preview' && typeof m.data === 'string' && m.data.startsWith('blob:')) {
+      try { URL.revokeObjectURL(m.data) } catch {}
+    }
+  })
+}
+const createPreviewMediaItems = (files) => files.map((file, index) => ({
+  type: file.type.startsWith('video') ? 'video' : 'image',
+  source: 'preview',
+  tempId: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
+  data: URL.createObjectURL(file),
+}))
 const normalizeMediaForDb = (media) => (media || []).map((m) => {
   if (!m) return null
   if (m.source === 'storage' && m.path) {
@@ -1052,19 +1072,25 @@ const onFileChange = async (e, item) => {
   const input = e.target
   const files = Array.from(input?.files || [])
   if (!files.length) return
+  let currentMedia = []
+  const previewItems = createPreviewMediaItems(files)
   try {
     await ensureSession()
-    const currentMedia = await loadMediaCached(item.id)
+    currentMedia = await loadMediaCached(item.id)
+    updateLocalMedia(item.id, [...currentMedia, ...previewItems])
     const updated = await uploadMediaFiles(files, item.id, currentMedia)
     const mediaForDb = normalizeMediaForDb(updated)
     const { error } = await supabase.from('customers').update({ media: mediaForDb }).eq('id', item.id)
     if (error) throw error
     mediaCache.set(item.id, updated)
     updateLocalMedia(item.id, updated)
+    revokePreviewMediaUrls(previewItems)
     showToast('Đã thêm ảnh/video!', 'success')
   } catch (err) {
+    revokePreviewMediaUrls(previewItems)
+    updateLocalMedia(item.id, currentMedia)
     console.error('[Media Add]', err)
-    showToast('Không thêm được ảnh/video: ' + (err?.message || 'Unknown error'), 'error', 3500)
+    showToast('lưu ảnh vô database lỗi, vui lòng thử lại.', 'error', 3500)
   } finally {
     if (input) input.value = ''
   }
@@ -1243,18 +1269,48 @@ const saveCustomWarrantyFor = async (itemRef) => {
 }
 
 // ── EXPORT (chỉ admin) ────────────────────────────────────────
-const exportToExcel = (data, fileName) => {
-  if (!canExport.value) { showToast('Bạn không có quyền xuất Excel!', 'error'); return }
-  if (!data.length) return showToast('Không có dữ liệu!', 'error')
-  const rows = data.map(item => ({
-    'Kho': item.ticketId?.startsWith('NGOAI') ? '' : (item.warehouse || 'N/A'), 'Mã Ca': item.ticketId,
-    'Ngày Hoàn thành': item.doneDate, 'Khách Hàng': item.name,
-    'SĐT': item.phone, 'Model': item.model, 'Địa Chỉ': item.address,
-    'Lỗi': item.issue, 'Linh kiện thay': item.replacedPart
+const exportToExcel = async (data, fileName) => {
+  if (!canExport.value) { showToast('Ban khong co quyen xuat Excel!', 'error'); return }
+  if (!data.length) return showToast('Khong co du lieu!', 'error')
+  const mediaByTicket = await Promise.all(data.map(async (item) => {
+    const media = await loadMediaForItem(item.id)
+    return { item, media }
   }))
+  const rows = mediaByTicket.map(({ item, media }) => ({
+    'Kho': item.ticketId?.startsWith('NGOAI') ? '' : (item.warehouse || 'N/A'),
+    'Ma Ca': item.ticketId,
+    'Ngay Hoan thanh': item.doneDate,
+    'Khach Hang': item.name,
+    'SDT': item.phone,
+    'Model': item.model,
+    'Dia Chi': item.address,
+    'Loi': item.issue,
+    'Linh kien thay': item.replacedPart,
+    'Media': media.length ? ('Co ' + media.length + ' file') : 'Khong co anh',
+  }))
+  const mediaRows = mediaByTicket.flatMap(({ item, media }) => {
+    if (!media.length) {
+      return [{ 'Ma Ca': item.ticketId, 'Khach Hang': item.name, 'Loai': '', 'Link media': '', 'Ghi chu': 'Khong co anh' }]
+    }
+    return media.map((m, index) => ({
+      'Ma Ca': item.ticketId,
+      'Khach Hang': item.name,
+      'Loai': m.type === 'video' ? 'Video' : 'Anh',
+      'Link media': m.data || '',
+      'Ghi chu': 'File ' + (index + 1),
+    }))
+  })
   const ws = XLSX.utils.json_to_sheet(rows)
+  const wsMedia = XLSX.utils.json_to_sheet(mediaRows)
+  mediaRows.forEach((row, index) => {
+    const cellRef = XLSX.utils.encode_cell({ r: index + 1, c: 3 })
+    if (!row['Link media']) return
+    if (!wsMedia[cellRef]) wsMedia[cellRef] = { t: 's', v: row['Link media'] }
+    wsMedia[cellRef].l = { Target: row['Link media'] }
+  })
   const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Báo Cáo')
+  XLSX.utils.book_append_sheet(wb, ws, 'Bao Cao')
+  XLSX.utils.book_append_sheet(wb, wsMedia, 'Media')
   XLSX.writeFile(wb, `${fileName}.xlsx`)
 }
 const exportHoanThanhByWarehouse = (wh) => exportToExcel(customers.value.filter(c => c.status === 2 && c.ticketId?.startsWith('ASVN') && c.warehouse === wh), `Bao-Cao-Hoan-Thanh-${wh}`)
@@ -2122,7 +2178,7 @@ onUnmounted(() => {
                   <div v-else-if="!selectedCustomer.media?.length" class="text-muted small mb-3">Chưa có ảnh/video</div>
                   <div class="media-grid">
                     <div v-for="(m, idx) in selectedCustomer.media || []" :key="idx" class="media-item position-relative">
-                      <img v-if="m.type!=='video'" :src="m.data" @click="openMediaModal(m)" alt="Ảnh" style="cursor:pointer;" loading="lazy">
+                      <img v-if="m.type!=='video'" :src="m.data" @click="openMediaModal(m)" alt="Ảnh" style="cursor:pointer;" loading="lazy" decoding="async">
                       <video v-else :src="m.data" preload="metadata" playsinline muted @click="openMediaModal(m)" style="cursor:pointer;"></video>
                       <span @click.stop="removeMedia(selectedCustomer, idx)" class="media-del">×</span>
                     </div>
@@ -2270,7 +2326,7 @@ onUnmounted(() => {
                   <div v-else-if="!selectedOutside.media?.length" class="text-muted small mb-3">Chưa có ảnh/video</div>
                   <div class="media-grid">
                     <div v-for="(m, idx) in selectedOutside.media || []" :key="idx" class="media-item position-relative">
-                      <img v-if="m.type!=='video'" :src="m.data" @click="openMediaModal(m)" alt="Ảnh" style="cursor:pointer;" loading="lazy">
+                      <img v-if="m.type!=='video'" :src="m.data" @click="openMediaModal(m)" alt="Ảnh" style="cursor:pointer;" loading="lazy" decoding="async">
                       <video v-else :src="m.data" preload="metadata" playsinline muted @click="openMediaModal(m)" style="cursor:pointer;"></video>
                       <span @click.stop="removeMedia(selectedOutside, idx)" class="media-del">×</span>
                     </div>
@@ -2949,6 +3005,11 @@ onUnmounted(() => {
   .media-viewer-download { right: 12px; bottom: 12px; left: 12px; text-align: center; }
 }
 @media (max-width: 768px) {
+  .topbar { padding: 0 0.45rem; overflow: hidden; }
+  .topbar-left { gap: 0.35rem; min-width: 0; flex: 1 1 auto; }
+  .topbar-appname { display: none; }
+  .role-chip { padding: 0.12rem 0.38rem; }
+  .topbar-right { flex: 0 0 auto; gap: 0.25rem; }
   .layout { width: 100%; max-width: 100%; padding: 1rem 0.5rem; gap: 1rem; }
   .topbar-search { display: none; }
   .control-card, .cases-section { padding: 1rem; border-radius: 16px; }
