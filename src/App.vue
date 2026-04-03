@@ -24,8 +24,8 @@ const {
 const showStats  = ref(false)
 const showChart  = ref(false)
 const isOnline = ref(navigator.onLine)
-window.addEventListener('online',  () => { isOnline.value = true;  showToast('Đã kết nối lại!', 'success') })
-window.addEventListener('offline', () => { isOnline.value = false; showToast('Mất kết nối mạng!', 'error', 0) })
+const handleOnline = () => { isOnline.value = true; showToast('Da ket noi lai!', 'success') }
+const handleOffline = () => { isOnline.value = false; showToast('Mat ket noi mang!', 'error', 0) }
 
 // ── SUPABASE ──────────────────────────────────────────────────
 const supabase = getSupabase()
@@ -572,6 +572,16 @@ const selectType = (type) => {
 }
 
 // ── THỐNG KÊ ─────────────────────────────────────────────────
+const isChoLkTre = (customer) => {
+  if (customer?.status !== 1 || !customer?.statusLog?.length) return false
+  const last = [...customer.statusLog].reverse().find((log) => log.status === 1)
+  if (!last) return false
+  const match = last.at?.match(/(\d+)\/(\d+)\/(\d+)/)
+  if (!match) return false
+  const movedAt = new Date(match[3], match[2] - 1, match[1])
+  return Date.now() - movedAt.getTime() > 3 * 86400000
+}
+
 const stats = computed(() => {
   const asvn = customers.value.filter(c => c.ticketId?.startsWith('ASVN'))
   const tdp  = asvn.filter(c => c.warehouse === 'TDP')
@@ -592,7 +602,7 @@ const stats = computed(() => {
     ngoaiTong:      customers.value.filter(c => c.ticketId?.startsWith('NGOAI')).length,
     doanhThuHomNay: asvn.filter(c => c.status === 2 && c.doneDate === today).reduce((s,c) => s + (c.price||0), 0),
     doanhThuThang:  asvn.filter(c => c.status === 2 && c.doneDate?.endsWith(`/${new Date().getMonth()+1}/${new Date().getFullYear()}`)).reduce((s,c) => s + (c.price||0), 0),
-    choLkTre:       asvn.filter(c => c.status === 1 && c.statusLog?.length && (() => { const last = [...c.statusLog].reverse().find(l=>l.status===1); if (!last) return false; const d = last.at?.match(/(\d+)\/(\d+)\/(\d+)/); if (!d) return false; const t = new Date(d[3],d[2]-1,d[1]); return Date.now()-t.getTime() > 3*86400000 })()).length,
+    choLkTre:       asvn.filter(isChoLkTre).length,
   }
 })
 
@@ -753,17 +763,7 @@ const outsideHoanThanh   = computed(() => {
   return sortItems(items, 'createdAt')
 })
 // Ca chờ LK trễ > 3 ngày
-const choLkTreList = computed(() => {
-  return customers.value.filter(c => {
-    if (c.status !== 1) return false
-    const last = c.statusLog ? [...c.statusLog].reverse().find(l => l.status === 1) : null
-    if (!last) return false
-    const m = last.at?.match(/(\d+)\/(\d+)\/(\d+)/)
-    if (!m) return false
-    const t = new Date(m[3], m[2]-1, m[1])
-    return Date.now() - t.getTime() > 3 * 86400000
-  })
-})
+const choLkTreList = computed(() => customers.value.filter(isChoLkTre))
 
 const treCaList = computed(() => {
   const now = Date.now()
@@ -1269,167 +1269,7 @@ const saveCustomWarrantyFor = async (itemRef) => {
 }
 
 // ── EXPORT (chỉ admin) ────────────────────────────────────────
-const escapeHtml = (value = '') => String(value)
-  .replaceAll('&', '&amp;')
-  .replaceAll('<', '&lt;')
-  .replaceAll('>', '&gt;')
-  .replaceAll('"', '&quot;')
-  .replaceAll("'", '&#39;')
-
-const renderExportMediaHtml = (media = []) => {
-  if (!media.length) {
-    return '<div class="export-media-empty">Khong co anh/video</div>'
-  }
-  return media.map((item, index) => {
-    const src = escapeHtml(item?.data || '')
-    const label = item?.type === 'video' ? `Video ${index + 1}` : `Anh ${index + 1}`
-    if (!src) {
-      return `<div class="export-media-empty">${label}: file rong</div>`
-    }
-    if (item?.type === 'video') {
-      return `
-        <figure class="export-media-card">
-          <video class="export-media-asset" controls preload="metadata" playsinline src="${src}"></video>
-          <figcaption class="export-media-caption">
-            <span>${label}</span>
-            <a href="${src}" target="_blank" rel="noopener">Mo video</a>
-          </figcaption>
-        </figure>
-      `
-    }
-    return `
-      <figure class="export-media-card">
-        <img class="export-media-asset" src="${src}" alt="${escapeHtml(label)}" loading="lazy">
-        <figcaption class="export-media-caption">
-          <span>${label}</span>
-          <a href="${src}" target="_blank" rel="noopener">Mo anh</a>
-        </figcaption>
-      </figure>
-    `
-  }).join('')
-}
-
-const buildExportReportHtml = (fileName, mediaByTicket) => {
-  const exportedAt = new Date().toLocaleString('vi-VN')
-  const rowsHtml = mediaByTicket.map(({ item, media }, index) => `
-    <tr>
-      <td>${index + 1}</td>
-      <td>${escapeHtml(item.ticketId || '')}</td>
-      <td>${escapeHtml(item.name || '')}</td>
-      <td>${escapeHtml(item.phone || '')}</td>
-      <td>${escapeHtml(item.model || '')}</td>
-      <td>${escapeHtml(item.doneDate || '')}</td>
-      <td>${escapeHtml(item.ticketId?.startsWith('NGOAI') ? '' : (item.warehouse || ''))}</td>
-      <td>${media.length ? media.length : 'Khong co'}</td>
-    </tr>
-  `).join('')
-
-  const sectionsHtml = mediaByTicket.map(({ item, media }) => `
-    <section class="export-case">
-      <div class="export-case-head">
-        <div>
-          <h2>${escapeHtml(item.ticketId || 'Khong ro ma ca')}</h2>
-          <div class="export-case-meta">${escapeHtml(item.name || 'Khach le')} • ${escapeHtml(item.phone || 'Khong co SDT')}</div>
-        </div>
-        <span class="export-case-status">${escapeHtml(item.ticketId?.startsWith('NGOAI') ? 'Ca ngoai' : (item.warehouse || 'Khong ro kho'))}</span>
-      </div>
-      <div class="export-case-info">
-        <div><strong>Ngay hoan thanh:</strong> ${escapeHtml(item.doneDate || 'Chua cap nhat')}</div>
-        <div><strong>Model:</strong> ${escapeHtml(item.model || 'Chua cap nhat')}</div>
-        <div><strong>Loi:</strong> ${escapeHtml(item.issue || 'Chua cap nhat')}</div>
-        <div><strong>Linh kien thay:</strong> ${escapeHtml(item.replacedPart || 'Chua co')}</div>
-        <div><strong>Dia chi:</strong> ${escapeHtml(item.address || 'Chua cap nhat')}</div>
-      </div>
-      <div class="export-media-grid">
-        ${renderExportMediaHtml(media)}
-      </div>
-    </section>
-  `).join('')
-
-  return `<!doctype html>
-<html lang="vi">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escapeHtml(fileName)}</title>
-  <style>
-    :root { color-scheme: light; }
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; background: #eef4fb; color: #18233b; }
-    .export-shell { max-width: 1180px; margin: 0 auto; padding: 24px 16px 48px; }
-    .export-topbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 18px; }
-    .export-title { margin: 0; font-size: 28px; line-height: 1.15; }
-    .export-note { color: #49607f; font-size: 14px; }
-    .export-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-    .export-btn { border: 0; border-radius: 999px; padding: 12px 18px; background: #1f6fe5; color: #fff; font-weight: 700; cursor: pointer; text-decoration: none; }
-    .export-btn--ghost { background: #dfe9f8; color: #18304f; }
-    .export-card { background: #fff; border-radius: 24px; padding: 18px; box-shadow: 0 16px 40px rgba(33, 65, 120, 0.12); border: 1px solid #d7e3f6; }
-    .export-table-wrap { overflow-x: auto; margin-bottom: 18px; }
-    table { width: 100%; border-collapse: collapse; min-width: 760px; }
-    th, td { padding: 12px 10px; border-bottom: 1px solid #dde8f5; text-align: left; vertical-align: top; font-size: 14px; }
-    th { background: #edf4ff; color: #234264; }
-    .export-cases { display: grid; gap: 18px; margin-top: 18px; }
-    .export-case { background: #fff; border: 1px solid #d7e3f6; border-radius: 22px; padding: 18px; box-shadow: 0 10px 28px rgba(33, 65, 120, 0.08); }
-    .export-case-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
-    .export-case-head h2 { margin: 0 0 4px; font-size: 24px; color: #1557bf; }
-    .export-case-meta { color: #5b6f8c; font-size: 15px; }
-    .export-case-status { white-space: nowrap; background: #e7f1ff; color: #0f4ea9; padding: 8px 12px; border-radius: 999px; font-weight: 700; }
-    .export-case-info { display: grid; gap: 8px; color: #21314f; margin-bottom: 16px; font-size: 14px; }
-    .export-media-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
-    .export-media-card { margin: 0; background: #f7faff; border-radius: 18px; border: 1px solid #d7e3f6; padding: 10px; }
-    .export-media-asset { width: 100%; height: 220px; object-fit: cover; border-radius: 12px; background: #d9e6f7; display: block; }
-    .export-media-caption { margin-top: 10px; display: flex; justify-content: space-between; gap: 12px; align-items: center; font-size: 14px; }
-    .export-media-caption a { color: #145dc7; font-weight: 700; text-decoration: none; }
-    .export-media-empty { min-height: 120px; display: flex; align-items: center; justify-content: center; border: 1px dashed #bfd2ee; border-radius: 18px; color: #6981a0; background: #f8fbff; padding: 18px; text-align: center; }
-    @media print { .export-actions { display: none; } body { background: #fff; } .export-shell { padding: 0; } .export-card, .export-case { box-shadow: none; } }
-    @media (max-width: 768px) {
-      .export-shell { padding: 14px 12px 32px; }
-      .export-title { font-size: 22px; }
-      .export-case-head { flex-direction: column; }
-      .export-case-status { white-space: normal; }
-      .export-media-grid { grid-template-columns: 1fr; }
-      .export-media-asset { height: 240px; }
-    }
-  </style>
-</head>
-<body>
-  <div class="export-shell">
-    <div class="export-topbar">
-      <div>
-        <h1 class="export-title">${escapeHtml(fileName)}</h1>
-        <div class="export-note">Bao cao media xuat luc ${escapeHtml(exportedAt)}. Co the in, luu PDF hoac chia se truc tiep tu trinh duyet.</div>
-      </div>
-      <div class="export-actions">
-        <button class="export-btn" onclick="window.print()">In / Luu PDF</button>
-        <a class="export-btn export-btn--ghost" href="${escapeHtml(window.location.origin + '/')}">Ve trang chinh</a>
-      </div>
-    </div>
-    <div class="export-card">
-      <div class="export-table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>STT</th>
-              <th>Ma ca</th>
-              <th>Khach hang</th>
-              <th>SDT</th>
-              <th>Model</th>
-              <th>Ngay hoan thanh</th>
-              <th>Kho</th>
-              <th>Media</th>
-            </tr>
-          </thead>
-          <tbody>${rowsHtml}</tbody>
-        </table>
-      </div>
-    </div>
-    <div class="export-cases">${sectionsHtml}</div>
-  </div>
-</body>
-</html>`
-}
-
-const exportToExcel = async (data, fileName) => {
+const openMediaReport = async (data, fileName) => {
   if (!canExport.value) { showToast('Ban khong co quyen xuat bao cao!', 'error'); return }
   if (!data.length) return showToast('Khong co du lieu!', 'error')
   try {
@@ -1471,9 +1311,9 @@ const exportToExcel = async (data, fileName) => {
     showToast('Khong xuat duoc bao cao media!', 'error')
   }
 }
-const exportHoanThanhByWarehouse = (wh) => exportToExcel(customers.value.filter(c => c.status === 2 && c.ticketId?.startsWith('ASVN') && c.warehouse === wh), `Bao-Cao-Hoan-Thanh-${wh}`)
-const exportAllHoanThanh = () => exportToExcel(customers.value.filter(c => c.status === 2 && c.ticketId?.startsWith('ASVN')), 'Bao-Cao-Hoan-Thanh-All')
-const exportOutsideHoanThanh = () => exportToExcel(outsideHoanThanh.value, 'Bao-Cao-Ca-Ngoai-Hoan-Thanh')
+const exportHoanThanhByWarehouse = (wh) => openMediaReport(customers.value.filter(c => c.status === 2 && c.ticketId?.startsWith('ASVN') && c.warehouse === wh), `Bao-Cao-Hoan-Thanh-${wh}`)
+const exportAllHoanThanh = () => openMediaReport(customers.value.filter(c => c.status === 2 && c.ticketId?.startsWith('ASVN')), 'Bao-Cao-Hoan-Thanh-All')
+const exportOutsideHoanThanh = () => openMediaReport(outsideHoanThanh.value, 'Bao-Cao-Ca-Ngoai-Hoan-Thanh')
 
 // ── SWIPE ĐỔI TRẠNG THÁI ──────────────────────────────────────
 const swipeBoundElements = new WeakSet()
@@ -1570,6 +1410,8 @@ let stopLoginWatch = null
 
 // ── MOUNTED ───────────────────────────────────────────────────
 onMounted(async () => {
+  window.addEventListener('online', handleOnline)
+  window.addEventListener('offline', handleOffline)
   hydrateCache()
   await initAuth()
   if (isLoggedIn.value) {
@@ -1680,6 +1522,8 @@ onUnmounted(() => {
   if (visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler)
   if (focusHandler) window.removeEventListener('focus', focusHandler)
   if (broadcastChannel) broadcastChannel.close()
+  window.removeEventListener('online', handleOnline)
+  window.removeEventListener('offline', handleOffline)
   window.removeEventListener('resize', syncMobileControlForViewport)
 })
 </script>

@@ -10,6 +10,7 @@ const report = ref(null)
 const loadError = ref('')
 const mediaState = ref({})
 const visibleCount = ref(PAGE_SIZE)
+const activeMedia = ref(null)
 
 const formatDateTime = (value) => {
   if (!value) return ''
@@ -163,6 +164,16 @@ const loadMoreItems = () => {
   visibleCount.value = Math.min(visibleCount.value + PAGE_SIZE, reportItems.value.length)
 }
 
+const openMediaViewer = (media) => {
+  activeMedia.value = media
+  document.body.style.overflow = 'hidden'
+}
+
+const closeMediaViewer = () => {
+  activeMedia.value = null
+  document.body.style.overflow = ''
+}
+
 const goBackHome = () => {
   const reportId = getReportId()
   if (reportId) {
@@ -259,9 +270,8 @@ const goBackHome = () => {
                   v-for="(media, mediaIndex) in getEntryState(entry.item.id).media"
                   :key="`${entry.item.id || entry.item.ticketId}-${mediaIndex}`"
                   class="media-report-link"
-                  :href="media.data"
-                  target="_blank"
-                  rel="noopener"
+                  href="#"
+                  @click.prevent="openMediaViewer(media)"
                 >
                   <span>{{ media.type === 'video' ? `Video ${mediaIndex + 1}` : `Anh ${mediaIndex + 1}` }}</span>
                   <small>{{ media.data }}</small>
@@ -278,6 +288,23 @@ const goBackHome = () => {
           <button class="media-report-btn media-report-btn--ghost" @click="loadMoreItems">
             Xem them 15 ca
           </button>
+        </div>
+
+        <div v-if="activeMedia" class="media-viewer" @click="closeMediaViewer">
+          <div class="media-viewer-inner" @click.stop>
+            <button type="button" class="media-viewer-close" @click="closeMediaViewer">Back</button>
+            <img v-if="activeMedia.type !== 'video'" :src="activeMedia.data" alt="Anh media" class="media-viewer-content">
+            <video v-else :src="activeMedia.data" controls autoplay playsinline class="media-viewer-content"></video>
+            <a
+              class="media-viewer-download"
+              :href="activeMedia.data"
+              target="_blank"
+              rel="noopener"
+              download
+            >
+              Tai xuong
+            </a>
+          </div>
         </div>
       </template>
     </div>
@@ -510,6 +537,59 @@ const goBackHome = () => {
   padding: 20px;
 }
 
+.media-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(15, 23, 42, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.media-viewer-inner {
+  position: relative;
+  width: min(100%, 960px);
+  max-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.media-viewer-content {
+  max-width: 100%;
+  max-height: 78vh;
+  border-radius: 18px;
+  background: #0f172a;
+  display: block;
+}
+
+.media-viewer-close {
+  position: absolute;
+  top: -12px;
+  left: 0;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.media-viewer-download {
+  position: absolute;
+  right: 0;
+  bottom: -14px;
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 800;
+  text-decoration: none;
+}
+
 @media (max-width: 768px) {
   .media-report-shell {
     padding: 16px 12px 30px;
@@ -543,6 +623,27 @@ const goBackHome = () => {
 
   .media-report-link {
     padding: 12px 14px;
+  }
+
+  .media-viewer {
+    padding: 16px 10px 76px;
+  }
+
+  .media-viewer-content {
+    max-height: 72vh;
+    border-radius: 16px;
+  }
+
+  .media-viewer-close {
+    top: 12px;
+    left: 12px;
+  }
+
+  .media-viewer-download {
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    text-align: center;
   }
 }
 </style>
