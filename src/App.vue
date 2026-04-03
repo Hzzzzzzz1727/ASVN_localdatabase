@@ -1,6 +1,5 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import * as XLSX from 'xlsx'
 import { getSupabase } from './lib/supabase'
 
 import { useSupabaseCustomers } from '@/composables/useSupabaseCustomers'
@@ -1269,49 +1268,203 @@ const saveCustomWarrantyFor = async (itemRef) => {
 }
 
 // ── EXPORT (chỉ admin) ────────────────────────────────────────
-const exportToExcel = async (data, fileName) => {
-  if (!canExport.value) { showToast('Ban khong co quyen xuat Excel!', 'error'); return }
-  if (!data.length) return showToast('Khong co du lieu!', 'error')
-  const mediaByTicket = await Promise.all(data.map(async (item) => {
-    const media = await loadMediaForItem(item.id)
-    return { item, media }
-  }))
-  const rows = mediaByTicket.map(({ item, media }) => ({
-    'Kho': item.ticketId?.startsWith('NGOAI') ? '' : (item.warehouse || 'N/A'),
-    'Ma Ca': item.ticketId,
-    'Ngay Hoan thanh': item.doneDate,
-    'Khach Hang': item.name,
-    'SDT': item.phone,
-    'Model': item.model,
-    'Dia Chi': item.address,
-    'Loi': item.issue,
-    'Linh kien thay': item.replacedPart,
-    'Media': media.length ? ('Co ' + media.length + ' file') : 'Khong co anh',
-  }))
-  const mediaRows = mediaByTicket.flatMap(({ item, media }) => {
-    if (!media.length) {
-      return [{ 'Ma Ca': item.ticketId, 'Khach Hang': item.name, 'Loai': '', 'Link media': '', 'Ghi chu': 'Khong co anh' }]
+const escapeHtml = (value = '') => String(value)
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;')
+  .replaceAll("'", '&#39;')
+
+const renderExportMediaHtml = (media = []) => {
+  if (!media.length) {
+    return '<div class="export-media-empty">Khong co anh/video</div>'
+  }
+  return media.map((item, index) => {
+    const src = escapeHtml(item?.data || '')
+    const label = item?.type === 'video' ? `Video ${index + 1}` : `Anh ${index + 1}`
+    if (!src) {
+      return `<div class="export-media-empty">${label}: file rong</div>`
     }
-    return media.map((m, index) => ({
-      'Ma Ca': item.ticketId,
-      'Khach Hang': item.name,
-      'Loai': m.type === 'video' ? 'Video' : 'Anh',
-      'Link media': m.data || '',
-      'Ghi chu': 'File ' + (index + 1),
+    if (item?.type === 'video') {
+      return `
+        <figure class="export-media-card">
+          <video class="export-media-asset" controls preload="metadata" playsinline src="${src}"></video>
+          <figcaption class="export-media-caption">
+            <span>${label}</span>
+            <a href="${src}" target="_blank" rel="noopener">Mo video</a>
+          </figcaption>
+        </figure>
+      `
+    }
+    return `
+      <figure class="export-media-card">
+        <img class="export-media-asset" src="${src}" alt="${escapeHtml(label)}" loading="lazy">
+        <figcaption class="export-media-caption">
+          <span>${label}</span>
+          <a href="${src}" target="_blank" rel="noopener">Mo anh</a>
+        </figcaption>
+      </figure>
+    `
+  }).join('')
+}
+
+const buildExportReportHtml = (fileName, mediaByTicket) => {
+  const exportedAt = new Date().toLocaleString('vi-VN')
+  const rowsHtml = mediaByTicket.map(({ item, media }, index) => `
+    <tr>
+      <td>${index + 1}</td>
+      <td>${escapeHtml(item.ticketId || '')}</td>
+      <td>${escapeHtml(item.name || '')}</td>
+      <td>${escapeHtml(item.phone || '')}</td>
+      <td>${escapeHtml(item.model || '')}</td>
+      <td>${escapeHtml(item.doneDate || '')}</td>
+      <td>${escapeHtml(item.ticketId?.startsWith('NGOAI') ? '' : (item.warehouse || ''))}</td>
+      <td>${media.length ? media.length : 'Khong co'}</td>
+    </tr>
+  `).join('')
+
+  const sectionsHtml = mediaByTicket.map(({ item, media }) => `
+    <section class="export-case">
+      <div class="export-case-head">
+        <div>
+          <h2>${escapeHtml(item.ticketId || 'Khong ro ma ca')}</h2>
+          <div class="export-case-meta">${escapeHtml(item.name || 'Khach le')} • ${escapeHtml(item.phone || 'Khong co SDT')}</div>
+        </div>
+        <span class="export-case-status">${escapeHtml(item.ticketId?.startsWith('NGOAI') ? 'Ca ngoai' : (item.warehouse || 'Khong ro kho'))}</span>
+      </div>
+      <div class="export-case-info">
+        <div><strong>Ngay hoan thanh:</strong> ${escapeHtml(item.doneDate || 'Chua cap nhat')}</div>
+        <div><strong>Model:</strong> ${escapeHtml(item.model || 'Chua cap nhat')}</div>
+        <div><strong>Loi:</strong> ${escapeHtml(item.issue || 'Chua cap nhat')}</div>
+        <div><strong>Linh kien thay:</strong> ${escapeHtml(item.replacedPart || 'Chua co')}</div>
+        <div><strong>Dia chi:</strong> ${escapeHtml(item.address || 'Chua cap nhat')}</div>
+      </div>
+      <div class="export-media-grid">
+        ${renderExportMediaHtml(media)}
+      </div>
+    </section>
+  `).join('')
+
+  return `<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(fileName)}</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; background: #eef4fb; color: #18233b; }
+    .export-shell { max-width: 1180px; margin: 0 auto; padding: 24px 16px 48px; }
+    .export-topbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 18px; }
+    .export-title { margin: 0; font-size: 28px; line-height: 1.15; }
+    .export-note { color: #49607f; font-size: 14px; }
+    .export-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .export-btn { border: 0; border-radius: 999px; padding: 12px 18px; background: #1f6fe5; color: #fff; font-weight: 700; cursor: pointer; text-decoration: none; }
+    .export-btn--ghost { background: #dfe9f8; color: #18304f; }
+    .export-card { background: #fff; border-radius: 24px; padding: 18px; box-shadow: 0 16px 40px rgba(33, 65, 120, 0.12); border: 1px solid #d7e3f6; }
+    .export-table-wrap { overflow-x: auto; margin-bottom: 18px; }
+    table { width: 100%; border-collapse: collapse; min-width: 760px; }
+    th, td { padding: 12px 10px; border-bottom: 1px solid #dde8f5; text-align: left; vertical-align: top; font-size: 14px; }
+    th { background: #edf4ff; color: #234264; }
+    .export-cases { display: grid; gap: 18px; margin-top: 18px; }
+    .export-case { background: #fff; border: 1px solid #d7e3f6; border-radius: 22px; padding: 18px; box-shadow: 0 10px 28px rgba(33, 65, 120, 0.08); }
+    .export-case-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
+    .export-case-head h2 { margin: 0 0 4px; font-size: 24px; color: #1557bf; }
+    .export-case-meta { color: #5b6f8c; font-size: 15px; }
+    .export-case-status { white-space: nowrap; background: #e7f1ff; color: #0f4ea9; padding: 8px 12px; border-radius: 999px; font-weight: 700; }
+    .export-case-info { display: grid; gap: 8px; color: #21314f; margin-bottom: 16px; font-size: 14px; }
+    .export-media-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+    .export-media-card { margin: 0; background: #f7faff; border-radius: 18px; border: 1px solid #d7e3f6; padding: 10px; }
+    .export-media-asset { width: 100%; height: 220px; object-fit: cover; border-radius: 12px; background: #d9e6f7; display: block; }
+    .export-media-caption { margin-top: 10px; display: flex; justify-content: space-between; gap: 12px; align-items: center; font-size: 14px; }
+    .export-media-caption a { color: #145dc7; font-weight: 700; text-decoration: none; }
+    .export-media-empty { min-height: 120px; display: flex; align-items: center; justify-content: center; border: 1px dashed #bfd2ee; border-radius: 18px; color: #6981a0; background: #f8fbff; padding: 18px; text-align: center; }
+    @media print { .export-actions { display: none; } body { background: #fff; } .export-shell { padding: 0; } .export-card, .export-case { box-shadow: none; } }
+    @media (max-width: 768px) {
+      .export-shell { padding: 14px 12px 32px; }
+      .export-title { font-size: 22px; }
+      .export-case-head { flex-direction: column; }
+      .export-case-status { white-space: normal; }
+      .export-media-grid { grid-template-columns: 1fr; }
+      .export-media-asset { height: 240px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="export-shell">
+    <div class="export-topbar">
+      <div>
+        <h1 class="export-title">${escapeHtml(fileName)}</h1>
+        <div class="export-note">Bao cao media xuat luc ${escapeHtml(exportedAt)}. Co the in, luu PDF hoac chia se truc tiep tu trinh duyet.</div>
+      </div>
+      <div class="export-actions">
+        <button class="export-btn" onclick="window.print()">In / Luu PDF</button>
+        <a class="export-btn export-btn--ghost" href="${escapeHtml(window.location.origin + '/')}">Ve trang chinh</a>
+      </div>
+    </div>
+    <div class="export-card">
+      <div class="export-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>STT</th>
+              <th>Ma ca</th>
+              <th>Khach hang</th>
+              <th>SDT</th>
+              <th>Model</th>
+              <th>Ngay hoan thanh</th>
+              <th>Kho</th>
+              <th>Media</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+    </div>
+    <div class="export-cases">${sectionsHtml}</div>
+  </div>
+</body>
+</html>`
+}
+
+const exportToExcel = async (data, fileName) => {
+  if (!canExport.value) { showToast('Ban khong co quyen xuat bao cao!', 'error'); return }
+  if (!data.length) return showToast('Khong co du lieu!', 'error')
+  const exportWindow = window.open('', '_blank')
+  if (exportWindow) {
+    exportWindow.document.write('<!doctype html><html><head><meta charset="UTF-8"><title>Dang tao bao cao...</title></head><body style="font-family:Segoe UI,Arial,sans-serif;padding:24px">Dang tao bao cao media, vui long cho trong giay lat...</body></html>')
+    exportWindow.document.close()
+  }
+  try {
+    showToast('Dang tao bao cao media...', 'info', 2000)
+    const mediaByTicket = await Promise.all(data.map(async (item) => {
+      const media = await loadMediaForItem(item.id)
+      return { item, media }
     }))
-  })
-  const ws = XLSX.utils.json_to_sheet(rows)
-  const wsMedia = XLSX.utils.json_to_sheet(mediaRows)
-  mediaRows.forEach((row, index) => {
-    const cellRef = XLSX.utils.encode_cell({ r: index + 1, c: 3 })
-    if (!row['Link media']) return
-    if (!wsMedia[cellRef]) wsMedia[cellRef] = { t: 's', v: row['Link media'] }
-    wsMedia[cellRef].l = { Target: row['Link media'] }
-  })
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Bao Cao')
-  XLSX.utils.book_append_sheet(wb, wsMedia, 'Media')
-  XLSX.writeFile(wb, `${fileName}.xlsx`)
+    const html = buildExportReportHtml(fileName, mediaByTicket)
+    if (exportWindow && !exportWindow.closed) {
+      exportWindow.document.open()
+      exportWindow.document.write(html)
+      exportWindow.document.close()
+      exportWindow.focus?.()
+    } else {
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${fileName}.html`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 2000)
+    }
+    showToast('Da mo bao cao media', 'success')
+  } catch (error) {
+    console.error('[Export Media]', error)
+    if (exportWindow && !exportWindow.closed) exportWindow.close()
+    showToast('Khong xuat duoc bao cao media!', 'error')
+  }
 }
 const exportHoanThanhByWarehouse = (wh) => exportToExcel(customers.value.filter(c => c.status === 2 && c.ticketId?.startsWith('ASVN') && c.warehouse === wh), `Bao-Cao-Hoan-Thanh-${wh}`)
 const exportAllHoanThanh = () => exportToExcel(customers.value.filter(c => c.status === 2 && c.ticketId?.startsWith('ASVN')), 'Bao-Cao-Hoan-Thanh-All')
