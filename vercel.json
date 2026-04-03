@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://switches-incentives-combination-ivory.trycloudflare.com/api/:match*"
+      "destination": "https://refer-bubble-exact-blank.trycloudflare.com/api/:match*"
     },
     {
       "source": "/media/(.*)",
-      "destination": "https://switches-incentives-combination-ivory.trycloudflare.com/media/$1"
+      "destination": "https://refer-bubble-exact-blank.trycloudflare.com/media/$1"
     }
   ]
 }
