@@ -8,6 +8,7 @@ const currentProfile = ref(null)
 const isAuthLoading = ref(true)
 const lockMessage = ref('')
 const isBypassingAuthChange = ref(false)
+const PROFILE_COLUMNS = 'id,email,phone,full_name,avatar_url,role,warehouse,is_active,account_status,approval_note,approved_by,approved_at,created_at,updated_at'
 
 const normalizeProfile = (profile) => {
   if (!profile) return null
@@ -38,7 +39,7 @@ export const useAuth = () => {
 
     const { data } = await supabase
       .from('profiles')
-      .select('*')
+      .select(PROFILE_COLUMNS)
       .eq('id', userId)
       .single()
 
@@ -87,7 +88,7 @@ export const useAuth = () => {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('*')
+      .select(PROFILE_COLUMNS)
       .eq('id', data.user.id)
       .single()
 
@@ -201,7 +202,7 @@ export const useAuth = () => {
       .from('profiles')
       .update(updates)
       .eq('id', userId)
-      .select('*')
+      .select(PROFILE_COLUMNS)
       .single()
     if (error) throw error
     const normalized = normalizeProfile(data)

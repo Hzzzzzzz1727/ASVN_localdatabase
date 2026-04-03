@@ -2728,7 +2728,7 @@ onUnmounted(() => {
 .topbar-right { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
 .topbar-search { min-width: 260px; max-width: 320px; width: 100%; flex: 1 1 260px; }
 .topbar-user  { font-size: 0.85rem; color: #94a3b8; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.btn-topbar   { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 0.35rem 0.75rem; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all .2s; }
+.btn-topbar   { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 0.35rem 0.75rem; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all .2s; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; line-height: 1; }
 .btn-topbar:hover { background: rgba(255,255,255,0.2); }
 .btn-topbar--active { background: #3b82f6; border-color: #3b82f6; }
 .btn-topbar--alert { position: relative; }
@@ -2776,6 +2776,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  line-height: 0;
 }
 .btn-icon svg,
 .tab-icon svg {
@@ -2924,7 +2925,7 @@ onUnmounted(() => {
   .topbar-user { display: none; }
   .topbar-right { gap: 0.3rem; flex: 1; justify-content: flex-end; }
   .topbar-search { min-width: 0; max-width: none; flex: 1 1 0; font-size: 0.8rem; padding: 0.35rem 0.55rem; }
-  .btn-topbar { padding: 0.3rem 0.45rem; font-size: 1rem; border-radius: 6px; white-space: nowrap; min-width: 36px; }
+  .btn-topbar { padding: 0; font-size: 1rem; border-radius: 8px; white-space: nowrap; width: 40px; min-width: 40px; height: 40px; }
   .btn-icon { display: inline-flex; }
   .btn-icon svg { width: 16px; height: 16px; }
   .btn-topbar--logout::before {
@@ -2932,6 +2933,7 @@ onUnmounted(() => {
     display: inline-block;
     width: 16px;
     height: 16px;
+    flex-shrink: 0;
     background: center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4'/%3E%3Cpath d='M16 17l5-5-5-5'/%3E%3Cpath d='M21 12H9'/%3E%3C/svg%3E");
   }
   .btn-text { display: none; }
