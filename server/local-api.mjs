@@ -71,6 +71,7 @@ const tableSchemas = {
       email: 'nvarchar',
       phone: 'nvarchar',
       full_name: 'nvarchar',
+      avatar_url: 'nvarchar',
       role: 'nvarchar',
       warehouse: 'nvarchar',
       is_active: 'bit',
@@ -438,6 +439,13 @@ async function ensureSchema(pool) {
       END
     `,
     `
+      IF COL_LENGTH('dbo.profiles', 'avatar_url') IS NULL
+      BEGIN
+        ALTER TABLE dbo.profiles
+        ADD [avatar_url] NVARCHAR(1000) NULL;
+      END
+    `,
+    `
       UPDATE dbo.profiles
       SET is_active = 1
       WHERE is_active IS NULL;
@@ -514,7 +522,7 @@ async function loadProfileById(pool, id) {
   const result = await pool.request()
     .input('id', sql.UniqueIdentifier, id)
     .query(`
-      SELECT TOP 1 [id], [email], [phone], [full_name], [role], [warehouse], [is_active], [account_status], [approval_note], [approved_by], [approved_at], [created_at], [updated_at]
+      SELECT TOP 1 [id], [email], [phone], [full_name], [avatar_url], [role], [warehouse], [is_active], [account_status], [approval_note], [approved_by], [approved_at], [created_at], [updated_at]
       FROM dbo.profiles
       WHERE id = @id
     `)
@@ -977,6 +985,7 @@ app.post('/api/auth/login', async (req, res) => {
           p.email,
           p.phone,
           p.full_name,
+          p.avatar_url,
           p.role,
           p.warehouse,
           p.is_active,
@@ -1054,6 +1063,65 @@ app.post('/api/auth/logout', async (req, res) => {
   res.json({ data: { success: true } })
 })
 
+app.post('/api/auth/change-password', async (req, res) => {
+  try {
+    if (!req.session?.profile?.id) {
+      res.status(401).json({ error: { message: 'Vui long dang nhap lai.' } })
+      return
+    }
+
+    const currentPassword = String(req.body?.currentPassword || '')
+    const newPassword = String(req.body?.newPassword || '')
+
+    if (!currentPassword || !newPassword) {
+      res.status(400).json({ error: { message: 'Vui long nhap day du mat khau hien tai va mat khau moi.' } })
+      return
+    }
+    if (newPassword.length < 6) {
+      res.status(400).json({ error: { message: 'Mat khau moi toi thieu 6 ky tu.' } })
+      return
+    }
+
+    const pool = await getPool()
+    const accountResult = await pool.request()
+      .input('id', sql.UniqueIdentifier, req.session.profile.id)
+      .query(`
+        SELECT TOP 1 [id], [password_hash]
+        FROM dbo.local_auth_accounts
+        WHERE id = @id
+      `)
+
+    const account = accountResult.recordset[0]
+    if (!account) {
+      res.status(404).json({ error: { message: 'Khong tim thay tai khoan dang nhap.' } })
+      return
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, account.password_hash)
+    if (!isMatch) {
+      res.status(400).json({ error: { message: 'Mat khau hien tai khong dung.' } })
+      return
+    }
+
+    const nextHash = await bcrypt.hash(newPassword, 10)
+    await pool.request()
+      .input('id', sql.UniqueIdentifier, req.session.profile.id)
+      .input('passwordHash', sql.NVarChar(sql.MAX), nextHash)
+      .query(`
+        UPDATE dbo.local_auth_accounts
+        SET password_hash = @passwordHash,
+            must_change_password = 0,
+            updated_at = SYSUTCDATETIME()
+        WHERE id = @id
+      `)
+
+    res.json({ data: { success: true } })
+  } catch (error) {
+    console.error('[auth/change-password]', error)
+    res.status(500).json({ error: { message: error.message || 'Khong doi duoc mat khau.' } })
+  }
+})
+
 app.post('/api/auth/users', requireAdmin, async (req, res) => {
   const normalizedEmail = String(req.body?.email || '').trim().toLowerCase()
   try {
@@ -1096,8 +1164,8 @@ app.post('/api/auth/users', requireAdmin, async (req, res) => {
     request.input('warehouse', sql.NVarChar(255), warehouse)
     request.input('passwordHash', sql.NVarChar(sql.MAX), passwordHash)
     await request.query(`
-      INSERT INTO dbo.profiles (id, email, phone, full_name, role, warehouse, is_active, account_status, approval_note, approved_at, created_at, updated_at)
-      VALUES (@id, @email, @phone, @fullName, @role, @warehouse, 1, 'approved', NULL, SYSUTCDATETIME(), SYSUTCDATETIME(), SYSUTCDATETIME());
+      INSERT INTO dbo.profiles (id, email, phone, full_name, avatar_url, role, warehouse, is_active, account_status, approval_note, approved_at, created_at, updated_at)
+      VALUES (@id, @email, @phone, @fullName, NULL, @role, @warehouse, 1, 'approved', NULL, SYSUTCDATETIME(), SYSUTCDATETIME(), SYSUTCDATETIME());
 
       INSERT INTO dbo.local_auth_accounts (id, email, password_hash, must_change_password, created_at, updated_at)
       VALUES (@id, @email, @passwordHash, 0, SYSUTCDATETIME(), SYSUTCDATETIME());
@@ -1151,8 +1219,8 @@ app.post('/api/auth/register', async (req, res) => {
     request.input('fullName', sql.NVarChar(255), normalizedName)
     request.input('passwordHash', sql.NVarChar(sql.MAX), passwordHash)
     await request.query(`
-      INSERT INTO dbo.profiles (id, email, phone, full_name, role, warehouse, is_active, account_status, approval_note, approved_at, created_at, updated_at)
-      VALUES (@id, @email, @phone, @fullName, 'nhanvien', NULL, 0, 'pending', N'Cho admin xac nhan', NULL, SYSUTCDATETIME(), SYSUTCDATETIME());
+      INSERT INTO dbo.profiles (id, email, phone, full_name, avatar_url, role, warehouse, is_active, account_status, approval_note, approved_at, created_at, updated_at)
+      VALUES (@id, @email, @phone, @fullName, NULL, 'nhanvien', NULL, 0, 'pending', N'Cho admin xac nhan', NULL, SYSUTCDATETIME(), SYSUTCDATETIME());
 
       INSERT INTO dbo.local_auth_accounts (id, email, password_hash, must_change_password, created_at, updated_at)
       VALUES (@id, @email, @passwordHash, 0, SYSUTCDATETIME(), SYSUTCDATETIME());

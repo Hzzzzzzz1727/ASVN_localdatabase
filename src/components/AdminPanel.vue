@@ -1,6 +1,9 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useAuth } from '@/composables/useAuth'
+import { getSupabase } from '@/lib/supabase'
+
+const supabase = getSupabase()
 
 const {
   getAllProfiles,
@@ -192,6 +195,11 @@ const statusClass = (profile) => {
   return 'chip-approved'
 }
 
+const avatarUrl = (profile) => {
+  if (!profile?.avatar_url) return ''
+  return supabase.storage.from('avatars').getPublicUrl(profile.avatar_url).data.publicUrl || ''
+}
+
 onMounted(load)
 </script>
 
@@ -221,7 +229,10 @@ onMounted(load)
     <div v-else class="ap-list">
       <div v-for="p in profiles" :key="p.id" :class="['ap-card', { 'ap-card--inactive': !p.is_active && p.account_status !== 'pending' }]">
         <div class="ap-info">
-          <div class="ap-avatar">{{ (p.full_name?.[0] || p.email?.[0] || '?').toUpperCase() }}</div>
+          <div class="ap-avatar">
+            <img v-if="avatarUrl(p)" :src="avatarUrl(p)" alt="Avatar" class="ap-avatar-img">
+            <template v-else>{{ (p.full_name?.[0] || p.email?.[0] || '?').toUpperCase() }}</template>
+          </div>
           <div class="ap-detail">
             <div class="ap-name">
               {{ p.full_name || '(chưa đặt tên)' }}
@@ -419,7 +430,9 @@ onMounted(load)
   justify-content: center;
   font-weight: 700;
   font-size: 1.05rem;
+  overflow: hidden;
 }
+.ap-avatar-img { width: 100%; height: 100%; object-fit: cover; }
 .ap-detail { min-width: 0; }
 .ap-name { font-weight: 700; color: #1e293b; font-size: 0.93rem; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 .ap-email, .ap-phone { color: #64748b; font-size: 0.8rem; margin: 0.1rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

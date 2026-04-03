@@ -12,7 +12,6 @@ import { buildShareAdminUrl, copyText, ensureShareRecord } from '@/lib/shareLink
 
 import LoginPage from '@/components/LoginPage.vue'
 import RevenueChart from '@/components/RevenueChart.vue'
-import AdminPanel from '@/components/AdminPanel.vue'
 
 // ── AUTH ──────────────────────────────────────────────────────
 const {
@@ -22,7 +21,6 @@ const {
   initAuth, logout
 } = useAuth()
 
-const showAdminPanel = ref(false)
 const showStats  = ref(false)
 const showChart  = ref(false)
 const isOnline = ref(navigator.onLine)
@@ -550,6 +548,9 @@ watch(showPartModal, (visible) => {
 
 // ── NAVIGATION ────────────────────────────────────────────────
 const backToTypeToggle = () => { showWarehouse.value = false; currentType.value = 'ASVN' }
+const openAccountCenter = () => {
+  window.location.href = '/admin.html'
+}
 const selectWarehouse  = (wh) => {
   if (hasLockedWarehouse.value) {
     currentWarehouse.value = assignedWarehouse.value
@@ -1553,8 +1554,8 @@ onUnmounted(() => {
           <span class="btn-text">Biểu đồ</span>
         </button>
         <button v-if="isAdmin"
-          @click="showAdminPanel = !showAdminPanel"
-          :class="['btn-topbar', showAdminPanel ? 'btn-topbar--active' : '']">
+          @click="openAccountCenter"
+          class="btn-topbar">
           <span class="btn-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
               <path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"></path>
@@ -1567,11 +1568,6 @@ onUnmounted(() => {
         </button>
         <button @click="logout" class="btn-topbar btn-topbar--logout"><span class="btn-text">Thoát</span></button>
       </div>
-    </div>
-
-    <!-- ADMIN PANEL -->
-    <div v-if="showAdminPanel && isAdmin && !showChart" class="admin-panel-wrap">
-      <AdminPanel />
     </div>
 
     <div v-show="!showChart" class="layout">

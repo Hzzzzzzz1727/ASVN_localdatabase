@@ -322,6 +322,18 @@ const createAuthApi = () => ({
     }
   },
 
+  async changePassword({ currentPassword, newPassword }) {
+    try {
+      const payload = await requestJson(`${API_BASE}/auth/change-password`, {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword, newPassword }),
+      })
+      return { data: payload.data, error: null }
+    } catch (error) {
+      return { data: null, error: { message: error.message || 'Khong doi duoc mat khau.' } }
+    }
+  },
+
   async setSession(session) {
     if (!session?.access_token) {
       writeAuthState(null)

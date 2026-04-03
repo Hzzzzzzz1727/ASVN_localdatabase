@@ -45,6 +45,15 @@ export const useAuth = () => {
     currentProfile.value = normalizeProfile(data)
   }
 
+  const refreshProfile = async () => {
+    if (!currentUser.value?.id) {
+      currentProfile.value = null
+      return null
+    }
+    await loadProfile(currentUser.value.id)
+    return currentProfile.value
+  }
+
   const initAuth = async () => {
     isAuthLoading.value = true
     try {
@@ -188,11 +197,24 @@ export const useAuth = () => {
   }
 
   const updateProfile = async (userId, updates) => {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('profiles')
       .update(updates)
       .eq('id', userId)
+      .select('*')
+      .single()
     if (error) throw error
+    const normalized = normalizeProfile(data)
+    if (normalized && currentProfile.value?.id === userId) {
+      currentProfile.value = normalized
+    }
+    return normalized
+  }
+
+  const changePassword = async ({ currentPassword, newPassword }) => {
+    const { data, error } = await supabase.auth.changePassword({ currentPassword, newPassword })
+    if (error) throw error
+    return data
   }
 
   return {
@@ -218,5 +240,7 @@ export const useAuth = () => {
     toggleUserActive,
     deleteUser,
     updateProfile,
+    refreshProfile,
+    changePassword,
   }
 }
