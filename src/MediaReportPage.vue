@@ -43,7 +43,8 @@ const totalMedia = computed(() => reportItems.value.reduce((sum, entry) => sum +
 
 const exportExcel = () => {
   if (!reportItems.value.length) return
-  const summaryRows = reportItems.value.map(({ item, media }) => ({
+
+  const summaryRows = reportItems.value.map(({ item }) => ({
     'Ma ca': item.ticketId || '',
     'Khach hang': item.name || '',
     'SDT': item.phone || '',
@@ -53,39 +54,11 @@ const exportExcel = () => {
     'Loi': item.issue || '',
     'Linh kien thay': item.replacedPart || '',
     'Dia chi': item.address || '',
-    'So media': media?.length || 0,
   }))
-
-  const mediaRows = reportItems.value.flatMap(({ item, media }) => {
-    if (!media?.length) {
-      return [{
-        'Ma ca': item.ticketId || '',
-        'Khach hang': item.name || '',
-        'Loai': 'Khong co',
-        'Link media': '',
-      }]
-    }
-    return media.map((entry, index) => ({
-      'Ma ca': item.ticketId || '',
-      'Khach hang': item.name || '',
-      'Loai': entry?.type === 'video' ? `Video ${index + 1}` : `Anh ${index + 1}`,
-      'Link media': entry?.data || '',
-    }))
-  })
 
   const workbook = XLSX.utils.book_new()
   const summarySheet = XLSX.utils.json_to_sheet(summaryRows)
-  const mediaSheet = XLSX.utils.json_to_sheet(mediaRows)
-
-  mediaRows.forEach((row, index) => {
-    if (!row['Link media']) return
-    const cellRef = XLSX.utils.encode_cell({ r: index + 1, c: 3 })
-    if (!mediaSheet[cellRef]) mediaSheet[cellRef] = { t: 's', v: row['Link media'] }
-    mediaSheet[cellRef].l = { Target: row['Link media'] }
-  })
-
   XLSX.utils.book_append_sheet(workbook, summarySheet, 'Tong hop')
-  XLSX.utils.book_append_sheet(workbook, mediaSheet, 'Media')
   XLSX.writeFile(workbook, `${reportTitle.value}.xlsx`)
 }
 
@@ -110,7 +83,7 @@ const goBackHome = () => {
           <div class="media-report-kicker">ASVN MEDIA REPORT</div>
           <h1>{{ reportTitle }}</h1>
           <p v-if="reportCreatedAt" class="media-report-subtitle">
-            Bao cao tao luc {{ reportCreatedAt }}. Hien thi truc tiep anh va video cua tung ca.
+            Bao cao tao luc {{ reportCreatedAt }}. Trang nay chi hien link media de mo nhanh va do tai nhe hon.
           </p>
         </div>
         <div class="media-report-actions">
@@ -160,29 +133,18 @@ const goBackHome = () => {
               <div><strong>Dia chi:</strong> {{ entry.item.address || 'Chua cap nhat' }}</div>
             </div>
 
-            <div v-if="entry.media?.length" class="media-report-grid">
-              <figure v-for="(media, mediaIndex) in entry.media" :key="`${entry.item.id || entry.item.ticketId}-${mediaIndex}`" class="media-report-media">
-                <img
-                  v-if="media.type !== 'video'"
-                  :src="media.data"
-                  :alt="`Anh ${mediaIndex + 1}`"
-                  loading="lazy"
-                  decoding="async"
-                >
-                <video
-                  v-else
-                  :src="media.data"
-                  controls
-                  preload="metadata"
-                  playsinline
-                ></video>
-                <figcaption>
-                  {{ media.type === 'video' ? `Video ${mediaIndex + 1}` : `Anh ${mediaIndex + 1}` }}
-                  <a :href="media.data" target="_blank" rel="noopener">
-                    {{ media.type === 'video' ? 'Mo video' : 'Mo anh' }}
-                  </a>
-                </figcaption>
-              </figure>
+            <div v-if="entry.media?.length" class="media-report-links">
+              <a
+                v-for="(media, mediaIndex) in entry.media"
+                :key="`${entry.item.id || entry.item.ticketId}-${mediaIndex}`"
+                class="media-report-link"
+                :href="media.data"
+                target="_blank"
+                rel="noopener"
+              >
+                <span>{{ media.type === 'video' ? `Video ${mediaIndex + 1}` : `Anh ${mediaIndex + 1}` }}</span>
+                <small>{{ media.data }}</small>
+              </a>
             </div>
             <div v-else class="media-report-empty media-report-empty--inline">
               Khong co anh/video
@@ -340,44 +302,41 @@ const goBackHome = () => {
   margin-bottom: 16px;
 }
 
-.media-report-grid {
+.media-report-links {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 14px;
+  gap: 12px;
 }
 
-.media-report-media {
-  margin: 0;
-  padding: 10px;
-  border-radius: 20px;
+.media-report-link {
+  display: block;
+  padding: 14px 16px;
+  border-radius: 18px;
   border: 1px solid #d6e3f6;
   background: #f7fbff;
-}
-
-.media-report-media img,
-.media-report-media video {
-  width: 100%;
-  height: 240px;
-  object-fit: cover;
-  border-radius: 14px;
-  display: block;
-  background: #dce7f6;
-}
-
-.media-report-media figcaption {
-  margin-top: 10px;
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: center;
   color: #314766;
   font-size: 14px;
+  text-decoration: none;
 }
 
-.media-report-media a {
+.media-report-link span {
+  display: block;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.media-report-link small {
+  display: block;
+  color: #5d7291;
+  word-break: break-all;
+}
+
+.media-report-link:hover {
+  border-color: #9bbaf0;
+  background: #eef5ff;
+}
+
+.media-report-link:visited {
   color: #1258bc;
-  font-weight: 700;
-  text-decoration: none;
 }
 
 .media-report-empty {
@@ -418,18 +377,8 @@ const goBackHome = () => {
     font-size: 24px;
   }
 
-  .media-report-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .media-report-media img,
-  .media-report-media video {
-    height: 260px;
-  }
-
-  .media-report-media figcaption {
-    flex-direction: column;
-    align-items: flex-start;
+  .media-report-link {
+    padding: 12px 14px;
   }
 }
 </style>
