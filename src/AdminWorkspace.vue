@@ -27,6 +27,8 @@ const goHome = () => {
 
 const handleLogout = async () => {
   await logout()
+  activeTab.value = 'profile'
+  window.location.href = '/index.html'
 }
 
 onMounted(async () => {
@@ -43,9 +45,7 @@ onMounted(async () => {
       <section class="hero-bar">
         <button class="back-link" type="button" @click="goHome">← Ve trang chinh</button>
         <div class="hero-center">
-          <div class="hero-kicker">ASVN Account Center</div>
           <h1>{{ pageTitle }}</h1>
-          <p>Quan ly thong tin dang nhap, anh dai dien va khu vuc tai khoan tach rieng khoi trang xu ly ca.</p>
         </div>
         <button v-if="isLoggedIn" class="logout-link" type="button" @click="handleLogout">Dang xuat</button>
       </section>
