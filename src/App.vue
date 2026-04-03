@@ -1434,33 +1434,27 @@ const exportToExcel = async (data, fileName) => {
   if (!data.length) return showToast('Khong co du lieu!', 'error')
   try {
     showToast('Dang tao bao cao media...', 'info', 2000)
-    const mediaByTicket = await Promise.all(data.map(async (item) => {
-      const media = await loadMediaForItem(item.id)
-      return {
-        item: {
-          id: item.id,
-          ticketId: item.ticketId,
-          name: item.name,
-          phone: item.phone,
-          model: item.model,
-          doneDate: item.doneDate,
-          warehouse: item.ticketId?.startsWith('NGOAI') ? '' : (item.warehouse || ''),
-          issue: item.issue,
-          replacedPart: item.replacedPart,
-          address: item.address,
-        },
-        media: (media || []).map((entry) => ({
-          type: entry?.type === 'video' ? 'video' : 'image',
-          data: entry?.data || '',
-        })),
-      }
+    const reportItems = data.map((item) => ({
+      item: {
+        id: item.id,
+        ticketId: item.ticketId,
+        name: item.name,
+        phone: item.phone,
+        model: item.model,
+        doneDate: item.doneDate,
+        warehouse: item.ticketId?.startsWith('NGOAI') ? '' : (item.warehouse || ''),
+        issue: item.issue,
+        replacedPart: item.replacedPart,
+        address: item.address,
+        mediaCount: Array.isArray(item.media) ? item.media.length : 0,
+      },
     }))
     const reportId = `media-report-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     await saveMediaReport({
       id: reportId,
       title: fileName,
       createdAt: new Date().toISOString(),
-      items: mediaByTicket,
+      items: reportItems,
     })
     const targetUrl = `/media-report.html?report=${encodeURIComponent(reportId)}`
     if (window.innerWidth <= 768) {

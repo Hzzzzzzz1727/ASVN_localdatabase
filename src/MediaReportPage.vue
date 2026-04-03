@@ -1,10 +1,15 @@
 <script setup>
 import { computed, ref } from 'vue'
 import * as XLSX from 'xlsx'
+import { getSupabase } from './lib/supabase'
 import { deleteMediaReport, loadMediaReport } from './lib/mediaReportStore'
 
+const BUCKET = 'media'
+const PAGE_SIZE = 15
 const report = ref(null)
 const loadError = ref('')
+const mediaState = ref({})
+const visibleCount = ref(PAGE_SIZE)
 
 const formatDateTime = (value) => {
   if (!value) return ''
@@ -14,6 +19,43 @@ const formatDateTime = (value) => {
 }
 
 const getReportId = () => new URLSearchParams(window.location.search).get('report') || ''
+
+const getPublicUrl = (path) => {
+  const { data } = getSupabase().storage.from(BUCKET).getPublicUrl(path)
+  return data?.publicUrl || ''
+}
+
+const normalizeMediaList = (media) => {
+  if (!Array.isArray(media)) return []
+  return media.map((entry) => {
+    if (!entry) return null
+    if (typeof entry === 'string') {
+      return {
+        type: 'image',
+        data: /^https?:\/\//i.test(entry) ? entry : getPublicUrl(entry),
+      }
+    }
+    if (entry?.source === 'storage' && entry?.path) {
+      return {
+        type: entry.type === 'video' ? 'video' : 'image',
+        data: getPublicUrl(entry.path),
+      }
+    }
+    if (entry?.path && !entry?.data) {
+      return {
+        type: entry.type === 'video' ? 'video' : 'image',
+        data: getPublicUrl(entry.path),
+      }
+    }
+    if (entry?.data) {
+      return {
+        type: entry.type === 'video' ? 'video' : 'image',
+        data: entry.data,
+      }
+    }
+    return null
+  }).filter(Boolean)
+}
 
 const loadReport = async () => {
   const reportId = getReportId()
@@ -37,13 +79,68 @@ const loadReport = async () => {
 loadReport()
 
 const reportItems = computed(() => report.value?.items || [])
+const visibleItems = computed(() => reportItems.value.slice(0, visibleCount.value))
 const reportTitle = computed(() => report.value?.title || 'Bao cao media')
 const reportCreatedAt = computed(() => formatDateTime(report.value?.createdAt))
-const totalMedia = computed(() => reportItems.value.reduce((sum, entry) => sum + (entry.media?.length || 0), 0))
+const totalMedia = computed(() => reportItems.value.reduce((sum, entry) => sum + (entry.item?.mediaCount || 0), 0))
+const hasMoreItems = computed(() => visibleCount.value < reportItems.value.length)
+
+const getEntryState = (itemId) => mediaState.value[itemId] || { open: false, loading: false, loaded: false, media: [], error: '' }
+
+const setEntryState = (itemId, patch) => {
+  mediaState.value = {
+    ...mediaState.value,
+    [itemId]: {
+      ...getEntryState(itemId),
+      ...patch,
+    },
+  }
+}
+
+const loadMediaLinks = async (itemId) => {
+  setEntryState(itemId, { loading: true, error: '', open: true })
+  try {
+    const { data, error } = await getSupabase()
+      .from('customers')
+      .select('media')
+      .eq('id', itemId)
+      .maybeSingle()
+    if (error) throw error
+    const media = normalizeMediaList(data?.media)
+    setEntryState(itemId, {
+      loading: false,
+      loaded: true,
+      open: true,
+      media,
+      error: '',
+    })
+  } catch (error) {
+    console.error('[MediaReport] Load media failed', error)
+    setEntryState(itemId, {
+      loading: false,
+      loaded: true,
+      open: true,
+      media: [],
+      error: 'Khong tai duoc link media.',
+    })
+  }
+}
+
+const toggleMedia = async (itemId) => {
+  const current = getEntryState(itemId)
+  if (current.open) {
+    setEntryState(itemId, { open: false })
+    return
+  }
+  if (current.loaded) {
+    setEntryState(itemId, { open: true })
+    return
+  }
+  await loadMediaLinks(itemId)
+}
 
 const exportExcel = () => {
   if (!reportItems.value.length) return
-
   const summaryRows = reportItems.value.map(({ item }) => ({
     'Ma ca': item.ticketId || '',
     'Khach hang': item.name || '',
@@ -60,6 +157,10 @@ const exportExcel = () => {
   const summarySheet = XLSX.utils.json_to_sheet(summaryRows)
   XLSX.utils.book_append_sheet(workbook, summarySheet, 'Tong hop')
   XLSX.writeFile(workbook, `${reportTitle.value}.xlsx`)
+}
+
+const loadMoreItems = () => {
+  visibleCount.value = Math.min(visibleCount.value + PAGE_SIZE, reportItems.value.length)
 }
 
 const goBackHome = () => {
@@ -83,7 +184,7 @@ const goBackHome = () => {
           <div class="media-report-kicker">ASVN MEDIA REPORT</div>
           <h1>{{ reportTitle }}</h1>
           <p v-if="reportCreatedAt" class="media-report-subtitle">
-            Bao cao tao luc {{ reportCreatedAt }}. Trang nay chi hien link media de mo nhanh va do tai nhe hon.
+            Bao cao tao luc {{ reportCreatedAt }}. Mo nhanh danh sach ca, can xem media thi bam tung ca de tai link rieng.
           </p>
         </div>
         <div class="media-report-actions">
@@ -108,13 +209,17 @@ const goBackHome = () => {
             <strong>{{ reportItems.length }}</strong>
           </div>
           <div class="media-report-metric">
+            <span class="media-report-metric-label">Dang hien</span>
+            <strong>{{ visibleItems.length }}</strong>
+          </div>
+          <div class="media-report-metric">
             <span class="media-report-metric-label">Tong media</span>
             <strong>{{ totalMedia }}</strong>
           </div>
         </section>
 
         <section class="media-report-list">
-          <article v-for="entry in reportItems" :key="entry.item.id || entry.item.ticketId" class="media-report-card">
+          <article v-for="entry in visibleItems" :key="entry.item.id || entry.item.ticketId" class="media-report-card">
             <div class="media-report-card-head">
               <div>
                 <h2>{{ entry.item.ticketId || 'Khong ro ma ca' }}</h2>
@@ -133,24 +238,47 @@ const goBackHome = () => {
               <div><strong>Dia chi:</strong> {{ entry.item.address || 'Chua cap nhat' }}</div>
             </div>
 
-            <div v-if="entry.media?.length" class="media-report-links">
-              <a
-                v-for="(media, mediaIndex) in entry.media"
-                :key="`${entry.item.id || entry.item.ticketId}-${mediaIndex}`"
-                class="media-report-link"
-                :href="media.data"
-                target="_blank"
-                rel="noopener"
-              >
-                <span>{{ media.type === 'video' ? `Video ${mediaIndex + 1}` : `Anh ${mediaIndex + 1}` }}</span>
-                <small>{{ media.data }}</small>
-              </a>
+            <div class="media-report-tools">
+              <div class="media-report-count">
+                {{ entry.item.mediaCount || 0 }} media
+              </div>
+              <button class="media-report-toggle" @click="toggleMedia(entry.item.id)">
+                {{ getEntryState(entry.item.id).open ? 'An media' : 'Xem media' }}
+              </button>
             </div>
-            <div v-else class="media-report-empty media-report-empty--inline">
-              Khong co anh/video
+
+            <div v-if="getEntryState(entry.item.id).open" class="media-report-panel">
+              <div v-if="getEntryState(entry.item.id).loading" class="media-report-empty media-report-empty--inline">
+                Dang tai link media...
+              </div>
+              <div v-else-if="getEntryState(entry.item.id).error" class="media-report-empty media-report-empty--inline">
+                {{ getEntryState(entry.item.id).error }}
+              </div>
+              <div v-else-if="getEntryState(entry.item.id).media.length" class="media-report-links">
+                <a
+                  v-for="(media, mediaIndex) in getEntryState(entry.item.id).media"
+                  :key="`${entry.item.id || entry.item.ticketId}-${mediaIndex}`"
+                  class="media-report-link"
+                  :href="media.data"
+                  target="_blank"
+                  rel="noopener"
+                >
+                  <span>{{ media.type === 'video' ? `Video ${mediaIndex + 1}` : `Anh ${mediaIndex + 1}` }}</span>
+                  <small>{{ media.data }}</small>
+                </a>
+              </div>
+              <div v-else class="media-report-empty media-report-empty--inline">
+                Khong co anh/video
+              </div>
             </div>
           </article>
         </section>
+
+        <div v-if="hasMoreItems" class="media-report-loadmore">
+          <button class="media-report-btn media-report-btn--ghost" @click="loadMoreItems">
+            Xem them 15 ca
+          </button>
+        </div>
       </template>
     </div>
   </div>
@@ -262,6 +390,12 @@ const goBackHome = () => {
   gap: 18px;
 }
 
+.media-report-loadmore {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
 .media-report-card {
   border-radius: 28px;
   padding: 18px;
@@ -300,6 +434,33 @@ const goBackHome = () => {
   gap: 8px;
   color: #22314d;
   margin-bottom: 16px;
+}
+
+.media-report-tools {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.media-report-count {
+  color: #5d7291;
+  font-weight: 700;
+}
+
+.media-report-toggle {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: #145dc7;
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.media-report-panel {
+  margin-top: 8px;
 }
 
 .media-report-links {
@@ -355,8 +516,10 @@ const goBackHome = () => {
   }
 
   .media-report-hero,
-  .media-report-card-head {
+  .media-report-card-head,
+  .media-report-tools {
     flex-direction: column;
+    align-items: stretch;
   }
 
   .media-report-actions {
@@ -364,7 +527,8 @@ const goBackHome = () => {
     justify-content: stretch;
   }
 
-  .media-report-btn {
+  .media-report-btn,
+  .media-report-toggle {
     width: 100%;
   }
 
