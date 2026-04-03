@@ -8,6 +8,7 @@ import { useGeocodingAndRouting } from '@/composables/useGeocodingAndRouting'
 import { useLinhKienManager } from '@/composables/useLinhKienManager'
 import { useAuth } from '@/composables/useAuth'
 import { buildShareAdminUrl, copyText, ensureShareRecord } from '@/lib/shareLinks'
+import { saveMediaReport } from '@/lib/mediaReportStore'
 
 import LoginPage from '@/components/LoginPage.vue'
 import RevenueChart from '@/components/RevenueChart.vue'
@@ -1455,13 +1456,21 @@ const exportToExcel = async (data, fileName) => {
       }
     }))
     const reportId = `media-report-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    localStorage.setItem(reportId, JSON.stringify({
+    await saveMediaReport({
       id: reportId,
       title: fileName,
       createdAt: new Date().toISOString(),
       items: mediaByTicket,
-    }))
-    window.open(`/media-report.html?report=${encodeURIComponent(reportId)}`, '_blank', 'noopener')
+    })
+    const targetUrl = `/media-report.html?report=${encodeURIComponent(reportId)}`
+    if (window.innerWidth <= 768) {
+      window.location.href = targetUrl
+    } else {
+      const newWindow = window.open(targetUrl, '_blank', 'noopener')
+      if (!newWindow) {
+        window.location.href = targetUrl
+      }
+    }
     showToast('Da mo trang bao cao media', 'success')
   } catch (error) {
     console.error('[Export Media]', error)

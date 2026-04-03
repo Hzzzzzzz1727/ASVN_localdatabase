@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import * as XLSX from 'xlsx'
+import { deleteMediaReport, loadMediaReport } from './lib/mediaReportStore'
 
 const report = ref(null)
 const loadError = ref('')
@@ -14,19 +15,19 @@ const formatDateTime = (value) => {
 
 const getReportId = () => new URLSearchParams(window.location.search).get('report') || ''
 
-const loadReport = () => {
+const loadReport = async () => {
   const reportId = getReportId()
   if (!reportId) {
     loadError.value = 'Khong tim thay ma bao cao.'
     return
   }
   try {
-    const raw = localStorage.getItem(reportId)
-    if (!raw) {
+    const data = await loadMediaReport(reportId)
+    if (!data) {
       loadError.value = 'Bao cao da het han hoac chua duoc tao.'
       return
     }
-    report.value = JSON.parse(raw)
+    report.value = data
   } catch (error) {
     console.error('[MediaReport] Load report failed', error)
     loadError.value = 'Khong doc duoc du lieu bao cao.'
@@ -89,6 +90,10 @@ const exportExcel = () => {
 }
 
 const goBackHome = () => {
+  const reportId = getReportId()
+  if (reportId) {
+    deleteMediaReport(reportId).catch(() => {})
+  }
   if (window.history.length > 1) {
     window.history.back()
     return
