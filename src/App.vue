@@ -1431,38 +1431,40 @@ const buildExportReportHtml = (fileName, mediaByTicket) => {
 const exportToExcel = async (data, fileName) => {
   if (!canExport.value) { showToast('Ban khong co quyen xuat bao cao!', 'error'); return }
   if (!data.length) return showToast('Khong co du lieu!', 'error')
-  const exportWindow = window.open('', '_blank')
-  if (exportWindow) {
-    exportWindow.document.write('<!doctype html><html><head><meta charset="UTF-8"><title>Dang tao bao cao...</title></head><body style="font-family:Segoe UI,Arial,sans-serif;padding:24px">Dang tao bao cao media, vui long cho trong giay lat...</body></html>')
-    exportWindow.document.close()
-  }
   try {
     showToast('Dang tao bao cao media...', 'info', 2000)
     const mediaByTicket = await Promise.all(data.map(async (item) => {
       const media = await loadMediaForItem(item.id)
-      return { item, media }
+      return {
+        item: {
+          id: item.id,
+          ticketId: item.ticketId,
+          name: item.name,
+          phone: item.phone,
+          model: item.model,
+          doneDate: item.doneDate,
+          warehouse: item.ticketId?.startsWith('NGOAI') ? '' : (item.warehouse || ''),
+          issue: item.issue,
+          replacedPart: item.replacedPart,
+          address: item.address,
+        },
+        media: (media || []).map((entry) => ({
+          type: entry?.type === 'video' ? 'video' : 'image',
+          data: entry?.data || '',
+        })),
+      }
     }))
-    const html = buildExportReportHtml(fileName, mediaByTicket)
-    if (exportWindow && !exportWindow.closed) {
-      exportWindow.document.open()
-      exportWindow.document.write(html)
-      exportWindow.document.close()
-      exportWindow.focus?.()
-    } else {
-      const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `${fileName}.html`
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      setTimeout(() => URL.revokeObjectURL(url), 2000)
-    }
-    showToast('Da mo bao cao media', 'success')
+    const reportId = `media-report-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    localStorage.setItem(reportId, JSON.stringify({
+      id: reportId,
+      title: fileName,
+      createdAt: new Date().toISOString(),
+      items: mediaByTicket,
+    }))
+    window.open(`/media-report.html?report=${encodeURIComponent(reportId)}`, '_blank', 'noopener')
+    showToast('Da mo trang bao cao media', 'success')
   } catch (error) {
     console.error('[Export Media]', error)
-    if (exportWindow && !exportWindow.closed) exportWindow.close()
     showToast('Khong xuat duoc bao cao media!', 'error')
   }
 }

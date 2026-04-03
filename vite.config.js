@@ -26,6 +26,7 @@ export default defineConfig({
       input: {
         main:  fileURLToPath(new URL('./index.html',  import.meta.url)),
         admin: fileURLToPath(new URL('./admin.html', import.meta.url)),
+        mediaReport: fileURLToPath(new URL('./media-report.html', import.meta.url)),
         share: fileURLToPath(new URL('./share.html',  import.meta.url)),
         shareAdmin: fileURLToPath(new URL('./share-admin.html', import.meta.url)),
       }
