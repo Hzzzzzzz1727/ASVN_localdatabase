@@ -12,10 +12,6 @@ const activeMedia = ref(null)
 
 const customer = computed(() => sharePayload.value || null)
 const customerMedia = computed(() => Array.isArray(customer.value?.media) ? customer.value.media : [])
-const returnToUrl = computed(() => {
-  const params = new URLSearchParams(location.search)
-  return params.get('returnTo')?.trim() || ''
-})
 let refreshTimer = null
 
 const DETAIL_ICONS = {
@@ -96,18 +92,6 @@ const closeMediaViewer = () => {
   document.body.style.overflow = ''
 }
 
-const goBack = () => {
-  if (returnToUrl.value) {
-    window.location.href = returnToUrl.value
-    return
-  }
-  if (window.history.length > 1) {
-    window.history.back()
-    return
-  }
-  window.location.href = '/index.html'
-}
-
 const loadPublicShare = async ({ silent = false } = {}) => {
   if (!silent || !sharePayload.value) loading.value = true
   if (!silent) error.value = ''
@@ -168,10 +152,7 @@ onUnmounted(() => {
             <div class="hero-title">THÔNG TIN CA</div>
           </div>
         </div>
-        <div class="hero-actions">
-          <button type="button" class="hero-back" @click="goBack">← Quay lại</button>
-          <div class="hero-note">Không có quyền sửa đổi dữ liệu</div>
-        </div>
+        <div class="hero-note">Không có quyền sửa đổi dữ liệu</div>
       </div>
 
       <div v-if="loading" class="state-card">
@@ -373,14 +354,6 @@ onUnmounted(() => {
   gap: 14px;
 }
 
-.hero-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
 .hero-logo {
   width: 52px;
   height: 52px;
@@ -396,25 +369,6 @@ onUnmounted(() => {
 .hero-title {
   font-size: 1.3rem;
   font-weight: 800;
-}
-
-.hero-back {
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: rgba(255, 255, 255, 0.92);
-  color: #0f172a;
-  border-radius: 999px;
-  padding: 10px 16px;
-  font-size: 0.92rem;
-  font-weight: 700;
-  line-height: 1;
-  cursor: pointer;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
-}
-
-.hero-back:hover {
-  background: #eff6ff;
-  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.12);
-  transform: translateY(-1px);
 }
 
 .hero-subtitle,
@@ -694,16 +648,6 @@ onUnmounted(() => {
 
   .hero-note,
   .updated-at {
-    font-size: 0.84rem;
-  }
-
-  .hero-actions {
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .hero-back {
-    padding: 9px 14px;
     font-size: 0.84rem;
   }
 
