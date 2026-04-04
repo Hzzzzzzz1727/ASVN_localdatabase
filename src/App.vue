@@ -398,6 +398,7 @@ const formatPrice = (n) => {
   if (!n) return '0đ'
   return Number(n).toLocaleString('vi-VN') + 'đ'
 }
+const formatCurrency = (n) => formatPrice(n)
 const totalLkPrice = (items) => (items || []).reduce((s, i) => s + (Number(i.price) || 0), 0)
 
 const openPriceEditor = (customer) => {
