@@ -16,6 +16,7 @@ import RevenueChart from '@/components/RevenueChart.vue'
 // ── AUTH ──────────────────────────────────────────────────────
 const {
   currentUser,
+  currentProfile,
   isLoggedIn, isAdmin, isNhanVien, isAuthLoading,
   userName, userWarehouse, canDelete, canExport,
   initAuth, logout
@@ -38,6 +39,16 @@ const showTopbarMenu = ref(false)
 const showMobileSearch = ref(false)
 const mobileCompactMode = ref(typeof window !== 'undefined' ? window.innerWidth <= 768 : true)
 const { customers, loadData, hydrateCache, loadMediaForItem, uploadMediaFiles, removeMediaItem, migrateBase64ToStorage } = useSupabaseCustomers()
+const profileInitial = computed(() => {
+  const source = currentProfile.value?.full_name || currentProfile.value?.email || '?'
+  return source.trim().charAt(0).toUpperCase() || '?'
+})
+const resolvedAvatarUrl = (path) => {
+  if (!path) return ''
+  if (/^https?:\/\//i.test(path)) return path
+  return supabase.storage.from('avatars').getPublicUrl(path).data.publicUrl || ''
+}
+const currentAvatarUrl = computed(() => resolvedAvatarUrl(currentProfile.value?.avatar_url))
 
 const ensureSession = async () => {
   const { data: { session } } = await supabase.auth.getSession()
@@ -1217,19 +1228,13 @@ const saveFolderLink  = async (id) => {
 }
 
 // ── HELPERS ───────────────────────────────────────────────────
-const selectTreCa = (item) => { searchQuery.value = item.ticketId; closeTreModal() }
+const selectTreCa = (item) => {
+  closeTreModal()
+  openDetailModalFull(item)
+}
 const selectChoLkTreCa = (item) => {
-  currentType.value = 'ASVN'
-  showTab.value = 'cholinkien'
-  if (!hasLockedWarehouse.value && item?.warehouse) {
-    currentWarehouse.value = item.warehouse
-  }
-  searchQuery.value = item.ticketId || ''
-  globalSearchQuery.value = ''
-  historySearchQuery.value = ''
-  completedDateFrom.value = ''
-  completedDateTo.value = ''
   showChoLkTreModal.value = false
+  openDetailModalFull(item)
 }
 const openConfirmDialog = ({ title = 'Xác nhận', message, confirmText = 'Đồng ý', cancelText = 'Hủy', variant = 'primary' }) =>
   new Promise((resolve) => {
@@ -1759,9 +1764,15 @@ onUnmounted(() => {
     <div v-if="showTopbarMenu && !showChart" class="topbar-menu-backdrop" @click="closeTopbarMenu">
       <div class="topbar-menu-sheet" @click.stop>
         <div class="topbar-menu-sheet__header">
-          <div>
-            <div class="topbar-menu-sheet__title">{{ userName || 'Tai khoan' }}</div>
-            <div class="topbar-menu-sheet__meta">{{ isAdmin ? 'Admin' : 'Nhan vien' }}</div>
+          <div class="topbar-menu-sheet__profile">
+            <div class="topbar-menu-avatar">
+              <img v-if="currentAvatarUrl" :src="currentAvatarUrl" alt="Avatar" class="topbar-menu-avatar__image">
+              <span v-else class="topbar-menu-avatar__fallback">{{ profileInitial }}</span>
+            </div>
+            <div>
+              <div class="topbar-menu-sheet__title">{{ userName || 'Tai khoan' }}</div>
+              <div class="topbar-menu-sheet__meta">{{ isAdmin ? 'Admin' : 'Nhan vien' }}</div>
+            </div>
           </div>
           <button class="topbar-menu-sheet__close" @click="closeTopbarMenu" aria-label="Dong menu">�</button>
         </div>
@@ -3002,7 +3013,7 @@ onUnmounted(() => {
 .filter-label { font-size: 0.82rem; font-weight: 700; color: #475569; }
 .btn-icon,
 .tab-icon {
-  display: none;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
@@ -3272,9 +3283,14 @@ onUnmounted(() => {
 .topbar-menu-backdrop { position: fixed; inset: 0; z-index: 140; background: rgba(15,23,42,.35); display: flex; justify-content: flex-end; align-items: flex-start; padding: 4.5rem 1rem 1rem; }
 .topbar-menu-sheet { width: min(320px, 100%); background: #fff; border-radius: 20px; box-shadow: 0 24px 60px rgba(15,23,42,.22); padding: 1rem; border: 1px solid #dbe3ef; }
 .topbar-menu-sheet__header { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; margin-bottom: 0.8rem; }
+.topbar-menu-sheet__profile { display: flex; align-items: center; gap: 0.8rem; min-width: 0; }
+.topbar-menu-avatar { width: 56px; height: 56px; border-radius: 999px; overflow: hidden; flex-shrink: 0; background: linear-gradient(135deg, #0f766e, #2563eb); color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 24px rgba(37,99,235,.18); }
+.topbar-menu-avatar__image { width: 100%; height: 100%; object-fit: cover; }
+.topbar-menu-avatar__fallback { font-size: 1.15rem; font-weight: 900; }
 .topbar-menu-sheet__title { font-size: 1rem; font-weight: 800; color: #0f172a; }
 .topbar-menu-sheet__meta { font-size: 0.82rem; color: #64748b; }
-.topbar-menu-sheet__close { width: 40px; height: 40px; border: 0; border-radius: 999px; background: #e2e8f0; color: #0f172a; font-size: 1.4rem; line-height: 1; }
+.topbar-menu-sheet__close { width: 40px; height: 40px; border: 0; border-radius: 999px; background: #e2e8f0; color: transparent; font-size: 0; line-height: 1; position: relative; }
+.topbar-menu-sheet__close::before { content: '×'; color: #0f172a; font-size: 1.4rem; line-height: 1; }
 .topbar-menu-item { width: 100%; border: 0; border-radius: 14px; background: #f8fafc; color: #0f172a; padding: 0.9rem 1rem; text-align: left; font-weight: 700; margin-top: 0.55rem; }
 .topbar-menu-item--danger { background: #fee2e2; color: #991b1b; }
 .section-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; text-align: left; }
@@ -3313,6 +3329,8 @@ onUnmounted(() => {
   .control-card--sticky { top: 76px; }
   .status-toggle-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
   .status-toggle-row button { padding: 0.7rem 0.45rem; font-size: 0.82rem; white-space: normal; line-height: 1.2; }
+  .status-toggle-row .tab-label { display: none; }
+  .status-toggle-row .tab-icon svg { width: 17px; height: 17px; }
   .control-card .filter-toolbar { align-items: flex-start; }
   .control-card .filter-title { font-size: 0.95rem; }
   .control-card .filter-meta-text { font-size: 0.8rem; }
