@@ -161,7 +161,9 @@ const handleEnable = async () => {
 
 const openPublicPage = () => {
   if (!publicUrl.value) return
-  window.open(buildPublicShareUrl(shareRecord.value.share_token), '_blank', 'noopener')
+  const targetUrl = new URL(buildPublicShareUrl(shareRecord.value.share_token))
+  targetUrl.searchParams.set('returnTo', location.href)
+  window.open(targetUrl.toString(), '_blank', 'noopener')
 }
 
 const goBackToApp = () => {
