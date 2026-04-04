@@ -1218,6 +1218,19 @@ const saveFolderLink  = async (id) => {
 
 // ── HELPERS ───────────────────────────────────────────────────
 const selectTreCa = (item) => { searchQuery.value = item.ticketId; closeTreModal() }
+const selectChoLkTreCa = (item) => {
+  currentType.value = 'ASVN'
+  showTab.value = 'cholinkien'
+  if (!hasLockedWarehouse.value && item?.warehouse) {
+    currentWarehouse.value = item.warehouse
+  }
+  searchQuery.value = item.ticketId || ''
+  globalSearchQuery.value = ''
+  historySearchQuery.value = ''
+  completedDateFrom.value = ''
+  completedDateTo.value = ''
+  showChoLkTreModal.value = false
+}
 const openConfirmDialog = ({ title = 'Xác nhận', message, confirmText = 'Đồng ý', cancelText = 'Hủy', variant = 'primary' }) =>
   new Promise((resolve) => {
     confirmDialog.value = {
@@ -2808,7 +2821,7 @@ onUnmounted(() => {
               <div v-else class="list-group">
                 <button v-for="item in choLkTreList" :key="item.id"
                   class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3"
-                  @click="showChoLkTreModal = false; openDetailModalFull(item)">
+                  @click="selectChoLkTreCa(item)">
                   <div class="flex-grow-1">
                     <div class="d-flex justify-content-between mb-1">
                       <strong class="text-primary fs-6">{{ item.ticketId }}</strong>
@@ -3004,7 +3017,7 @@ onUnmounted(() => {
 /* ── Buttons/Toggles ──────────────────────────────────────── */
 .toggle-row, .status-toggle-row, .warehouse-toggle-row { display: flex; gap: 0.75rem; margin-bottom: 1rem; }
 .status-toggle-row--sticky { position: sticky; top: 0; z-index: 5; background: #fff; padding-top: 0.25rem; }
-.toggle-row button, .status-toggle-row button { flex: 1; padding: 0.875rem 1rem; border-radius: 12px; font-size: 1rem; font-weight: 600; transition: all .3s; box-shadow: 0 2px 4px rgba(0,0,0,.08); border: 2px solid #cbd5e1; background: #f1f5f9; color: #475569; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
+.toggle-row button, .status-toggle-row button { flex: 1; min-width: 0; padding: 0.875rem 1rem; border-radius: 12px; font-size: 1rem; font-weight: 600; transition: all .3s; box-shadow: 0 2px 4px rgba(0,0,0,.08); border: 2px solid #cbd5e1; background: #f1f5f9; color: #475569; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
 .toggle-row button:hover, .status-toggle-row button:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.15); }
 .warehouse-toggle-row { align-items: center; }
 .gear-container { flex-shrink: 0; margin-right: 0.5rem; }
@@ -3018,8 +3031,8 @@ onUnmounted(() => {
 .control-body-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.85rem; }
 .control-body-title { font-size: 0.95rem; font-weight: 800; color: #0f172a; }
 .control-body-note { font-size: 0.82rem; color: #64748b; }
-.control-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-top: 1rem; }
-.control-actions input { grid-column: span 3; padding: 0.875rem; font-size: 1rem; }
+.control-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; margin-top: 1rem; }
+.control-actions input { grid-column: span 2; padding: 0.875rem; font-size: 1rem; min-width: 0; }
 .control-subfilters { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; margin-top: 0.85rem; }
 
 /* ── Cases ────────────────────────────────────────────────── */
@@ -3295,11 +3308,20 @@ onUnmounted(() => {
 .media-del { width: 32px; height: 32px; }
 .media-del::before { content: ''; position: absolute; inset: -8px; }
 @media (min-width: 992px) {
-  .layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); align-items: start; }
+  .layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); align-items: start; }
   .control-card { align-self: start; }
   .control-card--sticky { top: 76px; }
+  .status-toggle-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
+  .status-toggle-row button { padding: 0.7rem 0.45rem; font-size: 0.82rem; white-space: normal; line-height: 1.2; }
+  .control-card .filter-toolbar { align-items: flex-start; }
+  .control-card .filter-title { font-size: 0.95rem; }
+  .control-card .filter-meta-text { font-size: 0.8rem; }
+  .control-card .control-body { padding: 1rem; }
+  .control-card .control-actions .btn { min-height: 72px; }
+  .control-card .control-actions input { min-height: 54px; }
+  .control-card .control-subfilters { grid-template-columns: 1fr; }
   .cases-section { min-height: calc(100vh - 120px); }
-  .case-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .case-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .topbar-user { max-width: 180px; }
 }
 @media (max-width: 768px) {

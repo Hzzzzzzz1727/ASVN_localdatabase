@@ -4,7 +4,9 @@ import LoginPage from '@/components/LoginPage.vue'
 import AdminPanel from '@/components/AdminPanel.vue'
 import UserProfilePanel from '@/components/UserProfilePanel.vue'
 import { useAuth } from '@/composables/useAuth'
+import { getSupabase } from '@/lib/supabase'
 
+const supabase = getSupabase()
 const { initAuth, isAuthLoading, isLoggedIn, isAdmin, currentProfile, logout } = useAuth()
 const activeTab = ref('profile')
 
@@ -20,6 +22,16 @@ const pageTabs = computed(() => (
 ))
 
 const pageTitle = computed(() => (isAdmin.value ? 'Trung tam tai khoan' : 'Ho so ca nhan'))
+const profileInitial = computed(() => {
+  const source = currentProfile.value?.full_name || currentProfile.value?.email || '?'
+  return source.trim().charAt(0).toUpperCase() || '?'
+})
+const resolvedAvatarUrl = (path) => {
+  if (!path) return ''
+  if (/^https?:\/\//i.test(path)) return path
+  return supabase.storage.from('avatars').getPublicUrl(path).data.publicUrl || ''
+}
+const currentAvatarUrl = computed(() => resolvedAvatarUrl(currentProfile.value?.avatar_url))
 
 const goHome = () => {
   window.location.href = '/index.html'
@@ -61,9 +73,15 @@ onMounted(async () => {
 
       <section v-else class="workspace-card">
         <div class="workspace-top">
-          <div>
+          <div class="workspace-identity">
+            <div class="workspace-avatar">
+              <img v-if="currentAvatarUrl" :src="currentAvatarUrl" alt="Avatar" class="workspace-avatar__image">
+              <span v-else class="workspace-avatar__fallback">{{ profileInitial }}</span>
+            </div>
+            <div>
             <div class="workspace-kicker">{{ currentProfile?.email }}</div>
             <h2>{{ currentProfile?.full_name || 'Tai khoan' }}</h2>
+            </div>
           </div>
           <div class="workspace-tabs">
             <button
@@ -143,6 +161,22 @@ onMounted(async () => {
   border-bottom: 1px solid #e2e8f0;
   margin-bottom: 1rem;
 }
+.workspace-identity { display: flex; align-items: center; gap: 0.9rem; min-width: 0; }
+.workspace-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 999px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, #0f766e, #2563eb);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.18);
+}
+.workspace-avatar__image { width: 100%; height: 100%; object-fit: cover; }
+.workspace-avatar__fallback { font-size: 1.35rem; font-weight: 900; }
 .workspace-tabs { display: inline-flex; gap: 0.5rem; background: #e2e8f0; padding: 0.35rem; border-radius: 999px; }
 .workspace-tab {
   border: none;
@@ -163,6 +197,7 @@ onMounted(async () => {
   .hero-bar { grid-template-columns: 1fr; }
   .hero-center { text-align: left; }
   .workspace-top { flex-direction: column; align-items: flex-start; }
+  .workspace-identity { width: 100%; }
 }
 
 @media (max-width: 640px) {
