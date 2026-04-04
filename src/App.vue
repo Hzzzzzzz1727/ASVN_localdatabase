@@ -1777,7 +1777,7 @@ onUnmounted(() => {
           <button class="topbar-menu-sheet__close" @click="closeTopbarMenu" aria-label="Dong menu">�</button>
         </div>
         <button v-if="isAdmin" class="topbar-menu-item" @click="closeTopbarMenu(); showChart = true">Bieu do</button>
-        <button v-if="isAdmin" class="topbar-menu-item" @click="closeTopbarMenu(); openAccountCenter()">Quan ly tai khoan</button>
+        <button class="topbar-menu-item" @click="closeTopbarMenu(); openAccountCenter()">Trung tam tai khoan</button>
         <button class="topbar-menu-item topbar-menu-item--danger" @click="closeTopbarMenu(); logout()">Thoat</button>
       </div>
     </div>
