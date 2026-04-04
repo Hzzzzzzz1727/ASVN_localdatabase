@@ -34,6 +34,9 @@ const searchQuery = ref('')
 const historySearchQuery = ref('')
 const completedDateFrom = ref('')
 const completedDateTo = ref('')
+const showTopbarMenu = ref(false)
+const showMobileSearch = ref(false)
+const mobileCompactMode = ref(typeof window !== 'undefined' ? window.innerWidth <= 768 : true)
 const { customers, loadData, hydrateCache, loadMediaForItem, uploadMediaFiles, removeMediaItem, migrateBase64ToStorage } = useSupabaseCustomers()
 
 const ensureSession = async () => {
@@ -298,7 +301,12 @@ watch([isNhanVien, assignedWarehouse], () => {
 const syncMobileControlForViewport = () => {
   if (!isMobileViewport()) {
     isMobileControlCollapsed.value = false
+    showMobileSearch.value = false
+    showTopbarMenu.value = false
+    mobileCompactMode.value = false
+    return
   }
+  mobileCompactMode.value = true
 }
 const expandMobileControlCard = () => {
   if (!isMobileViewport() || !isMobileControlCollapsed.value) return
@@ -315,6 +323,26 @@ const toggleFilterPanel = () => {
 const collapseMobileControlCard = () => {
   if (!isMobileViewport()) return
   isMobileControlCollapsed.value = true
+}
+const closeTopbarMenu = () => { showTopbarMenu.value = false }
+const toggleTopbarMenu = () => { showTopbarMenu.value = !showTopbarMenu.value }
+const toggleMobileSearch = () => {
+  showMobileSearch.value = !showMobileSearch.value
+  if (!showMobileSearch.value) return
+  setTimeout(() => {
+    document.getElementById('mobile-search-input')?.focus()
+  }, 50)
+}
+const toggleCompactMode = () => {
+  mobileCompactMode.value = !mobileCompactMode.value
+}
+const switchCurrentTabByIndex = (index) => {
+  const tabs = ['danglam', 'cholinkien', 'hoanthanh']
+  if (currentType.value === 'OUTSIDE') {
+    outsideTab.value = tabs[index] || outsideTab.value
+    return
+  }
+  showTab.value = tabs[index] || showTab.value
 }
 watch(sortOption, (value) => {
   if (value === 'warehouse') sortOption.value = 'newest'
@@ -535,6 +563,59 @@ const closeQuickCreateModal = () => { showQuickCreateModal.value = false }
 const openCreateCaseModal = () => {
   if (currentType.value === 'OUTSIDE') openOutsideForm()
   else openQuickCreateModal()
+}
+const closeActiveOverlay = () => {
+  if (showModal.value) return closeMediaModal()
+  if (showDetailModal.value) return closeDetailModal()
+  if (showOutsideDetailModal.value) return closeOutsideDetailModal()
+  if (showEditModal.value) return closeEditModal()
+  if (showQuickCreateModal.value) return closeQuickCreateModal()
+  if (showOutsideForm.value) return closeOutsideForm()
+  if (showTreModal.value) return closeTreModal()
+  if (showChoLkTreModal.value) { showChoLkTreModal.value = false; return }
+  if (showChart.value) { showChart.value = false; return }
+  if (showTopbarMenu.value) return closeTopbarMenu()
+  if (showMobileSearch.value) showMobileSearch.value = false
+}
+const handleGlobalKeydown = (event) => {
+  const target = event.target
+  const typing = target instanceof HTMLElement && (
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT' ||
+    target.isContentEditable
+  )
+
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+    event.preventDefault()
+    if (isMobileViewport()) {
+      showMobileSearch.value = true
+      setTimeout(() => document.getElementById('mobile-search-input')?.focus(), 50)
+    } else {
+      document.getElementById('global-search-input')?.focus()
+    }
+    return
+  }
+
+  if (typing) {
+    if (event.key === 'Escape') closeActiveOverlay()
+    return
+  }
+
+  if (event.key.toLowerCase() === 'n') {
+    event.preventDefault()
+    openCreateCaseModal()
+    return
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeActiveOverlay()
+    return
+  }
+  if (['1', '2', '3'].includes(event.key)) {
+    event.preventDefault()
+    switchCurrentTabByIndex(Number(event.key) - 1)
+  }
 }
 const openMediaModal  = (media) => { modalMedia.value = media; showModal.value = true; document.body.style.overflow = 'hidden' }
 const closeMediaModal = () => { showModal.value = false; modalMedia.value = null; document.body.style.overflow = '' }
@@ -1313,6 +1394,7 @@ const openMediaReport = async (data, fileName) => {
 }
 const exportHoanThanhByWarehouse = (wh) => openMediaReport(customers.value.filter(c => c.status === 2 && c.ticketId?.startsWith('ASVN') && c.warehouse === wh), `Bao-Cao-Hoan-Thanh-${wh}`)
 const exportAllHoanThanh = () => openMediaReport(customers.value.filter(c => c.status === 2 && c.ticketId?.startsWith('ASVN')), 'Bao-Cao-Hoan-Thanh-All')
+const exportCsvnHoanThanh = () => openMediaReport(customers.value.filter(c => c.status === 2 && c.ticketId?.startsWith('CSVN')), 'Bao-Cao-Hoan-Thanh-CSVN')
 const exportOutsideHoanThanh = () => openMediaReport(outsideHoanThanh.value, 'Bao-Cao-Ca-Ngoai-Hoan-Thanh')
 
 // ── SWIPE ĐỔI TRẠNG THÁI ──────────────────────────────────────
@@ -1321,42 +1403,68 @@ const setupSwipe = (el, item, isOutside = false) => {
   if (!el) return
   if (swipeBoundElements.has(el)) return
   swipeBoundElements.add(el)
-  let startX = 0, startY = 0, swiping = false
+  let startX = 0, startY = 0, swiping = false, currentDx = 0, hapticSent = false
+
+  const resetSwipeVisual = () => {
+    el.style.transition = 'transform 0.18s ease'
+    el.style.transform = ''
+    el.classList.remove('swipe-card--dragging', 'swipe-card--right', 'swipe-card--left')
+    const rightHint = el.querySelector('.swipe-hint-right')
+    const leftHint = el.querySelector('.swipe-hint-left')
+    if (rightHint) rightHint.textContent = 'Xong ?'
+    if (leftHint) leftHint.textContent = item.status === 1 ? '? Dang lam' : '? Cho LK'
+    setTimeout(() => { el.style.transition = '' }, 180)
+  }
 
   el.addEventListener('touchstart', (e) => {
     startX = e.touches[0].clientX
     startY = e.touches[0].clientY
+    currentDx = 0
+    hapticSent = false
     swiping = true
+    el.classList.add('swipe-card--dragging')
+  }, { passive: true })
+
+  el.addEventListener('touchmove', (e) => {
+    if (!swiping) return
+    currentDx = e.touches[0].clientX - startX
+    const dy = e.touches[0].clientY - startY
+    if (Math.abs(currentDx) < Math.abs(dy)) return
+    const limitedDx = Math.max(-84, Math.min(84, currentDx))
+    el.style.transform = `translateX(${limitedDx}px)`
+    el.classList.toggle('swipe-card--right', limitedDx > 20)
+    el.classList.toggle('swipe-card--left', limitedDx < -20)
+    if (!hapticSent && Math.abs(limitedDx) > 20) {
+      navigator.vibrate?.(30)
+      hapticSent = true
+    }
   }, { passive: true })
 
   el.addEventListener('touchend', async (e) => {
     if (!swiping) return
     swiping = false
-    const dx = e.changedTouches[0].clientX - startX
+    const dx = currentDx || (e.changedTouches[0].clientX - startX)
     const dy = e.changedTouches[0].clientY - startY
-    // Chỉ xử lý nếu vuốt ngang > 60px và ngang hơn dọc
-    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) { resetSwipeVisual(); return }
 
     const now = new Date()
     const dateStr = `${now.getDate().toString().padStart(2,'0')}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getFullYear()}`
 
     if (dx > 0) {
-      // Vuốt PHẢI → Xong
-      if (item.status === 2) return
+      if (item.status === 2) { resetSwipeVisual(); return }
       const confirmed = await openConfirmDialog({
-        title: 'Chốt hoàn thành',
-        message: `Chốt xong ca ${item.ticketId}?`,
-        confirmText: 'Chốt ca',
+        title: 'Chot hoan thanh',
+        message: `Chot xong ca ${item.ticketId}?`,
+        confirmText: 'Chot ca',
         variant: 'success',
       })
-      if (!confirmed) return
+      if (!confirmed) { resetSwipeVisual(); return }
       const newLog = appendStatusLog(item.statusLog, 2)
       const updates = { status: 2, doneDate: dateStr, statusLog: newLog }
       await supabase.from('customers').update(updates).eq('id', item.id)
       updateLocalCustomer(item.id, updates)
       showToast(`Xong: ${item.ticketId}`, 'success')
     } else {
-      // Vuốt TRÁI: Đang làm -> Chờ LK, Chờ LK -> Đang làm
       const nextStatus = item.status === 1 ? 0 : 1
       const newLog = appendStatusLog(item.statusLog, nextStatus)
       const updates = nextStatus === 0
@@ -1364,16 +1472,14 @@ const setupSwipe = (el, item, isOutside = false) => {
         : { status: 1, doneDate: null, statusLog: newLog }
       await supabase.from('customers').update(updates).eq('id', item.id)
       updateLocalCustomer(item.id, updates)
-      showToast(
-        nextStatus === 0 ? `Đang làm: ${item.ticketId}` : `Chờ LK: ${item.ticketId}`,
-        nextStatus === 0 ? 'success' : 'warning'
-      )
+      showToast(nextStatus === 0 ? `Dang lam: ${item.ticketId}` : `Cho LK: ${item.ticketId}`, nextStatus === 0 ? 'success' : 'warning')
     }
+    resetSwipeVisual()
+  }, { passive: true })
 
-    // Visual feedback
-    el.style.transition = 'transform 0.2s'
-    el.style.transform = `translateX(${dx > 0 ? '8px' : '-8px'})`
-    setTimeout(() => { el.style.transform = ''; el.style.transition = '' }, 200)
+  el.addEventListener('touchcancel', () => {
+    swiping = false
+    resetSwipeVisual()
   }, { passive: true })
 }
 
@@ -1512,6 +1618,7 @@ onMounted(async () => {
   }
   window.addEventListener('focus', focusHandler)
 
+  window.addEventListener('keydown', handleGlobalKeydown)
   window.addEventListener('resize', syncMobileControlForViewport, { passive: true })
   syncMobileControlForViewport()
 })
@@ -1524,6 +1631,7 @@ onUnmounted(() => {
   if (broadcastChannel) broadcastChannel.close()
   window.removeEventListener('online', handleOnline)
   window.removeEventListener('offline', handleOffline)
+  window.removeEventListener('keydown', handleGlobalKeydown)
   window.removeEventListener('resize', syncMobileControlForViewport)
 })
 </script>
@@ -1540,7 +1648,7 @@ onUnmounted(() => {
   <LoginPage v-else-if="!isLoggedIn" />
 
   <!-- App chính -->
-  <div v-else class="page-wrap">
+  <div v-else :class="['page-wrap', { 'page-wrap--compact-mobile': mobileCompactMode }]">
 
     <!-- TRANG BIỂU ĐỒ (fullscreen overlay) -->
     <div v-if="showChart" class="chart-overlay">
@@ -1566,29 +1674,38 @@ onUnmounted(() => {
         <span class="topbar-logo">TV</span>
         <span class="topbar-appname">TV Repair</span>
         <span :class="['role-chip', isAdmin ? 'role-admin' : 'role-nv']">
-          {{ isAdmin ? 'Admin' : 'Nhân viên' }}
+          {{ isAdmin ? 'Admin' : 'Nhan vien' }}
         </span>
         <span v-if="!isOnline" class="offline-chip">Offline</span>
       </div>
       <div class="topbar-right">
         <input
+          id="global-search-input"
           v-model="globalSearchQuery"
           type="text"
           class="form-control topbar-search"
-          placeholder="Tìm mã ca, SĐT, tên khách..."
+          placeholder="Tim ma ca, SDT, ten khach..."
         >
         <span class="topbar-user">{{ userName }}</span>
-        <button @click="openTreModal" class="btn-topbar btn-topbar--alert">
+        <button @click="toggleMobileSearch" class="btn-topbar btn-topbar--utility topbar-mobile-only" aria-label="Mo tim kiem">
+          <span class="btn-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="7"></circle>
+              <path d="m20 20-3.5-3.5"></path>
+            </svg>
+          </span>
+        </button>
+        <button @click="openTreModal" class="btn-topbar btn-topbar--alert" aria-label="Mo danh sach ca tre" title="Ca tre">
           <span class="btn-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="8"></circle>
               <path d="M12 8v4l2.5 1.5"></path>
             </svg>
           </span>
-          <span class="btn-text">Ca trễ</span>
+          <span class="btn-text">Ca tre</span>
           <span v-if="treCaList.length" class="topbar-badge">{{ treCaList.length }}</span>
         </button>
-        <button @click="showChoLkTreModal = true" class="btn-topbar btn-topbar--alert">
+        <button @click="showChoLkTreModal = true" class="btn-topbar btn-topbar--alert" aria-label="Mo danh sach cho linh kien tre" title="Tre linh kien">
           <span class="btn-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
               <path d="M16 10V6a4 4 0 0 0-8 0v4"></path>
@@ -1596,35 +1713,47 @@ onUnmounted(() => {
               <path d="M12 13v2"></path>
             </svg>
           </span>
-          <span class="btn-text">Trễ LK</span>
+          <span class="btn-text">Tre LK</span>
           <span v-if="choLkTreList.length" class="topbar-badge">{{ choLkTreList.length }}</span>
         </button>
-        <button v-if="isAdmin"
-          @click="showChart = true"
-          class="btn-topbar">
+        <button @click="toggleTopbarMenu" class="btn-topbar btn-topbar--utility" aria-label="Mo menu thao tac" title="Menu">
           <span class="btn-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M5 19V9"></path>
-              <path d="M12 19V5"></path>
-              <path d="M19 19v-7"></path>
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="5" cy="12" r="1.8"></circle>
+              <circle cx="12" cy="12" r="1.8"></circle>
+              <circle cx="19" cy="12" r="1.8"></circle>
             </svg>
           </span>
-          <span class="btn-text">Biểu đồ</span>
+          <span class="btn-text">Menu</span>
         </button>
-        <button v-if="isAdmin"
-          @click="openAccountCenter"
-          class="btn-topbar">
-          <span class="btn-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"></path>
-              <circle cx="9.5" cy="7" r="3"></circle>
-              <path d="M20 8v6"></path>
-              <path d="M17 11h6"></path>
-            </svg>
-          </span>
-          <span class="btn-text">Quản lý TK</span>
-        </button>
-        <button @click="logout" class="btn-topbar btn-topbar--logout"><span class="btn-text">Thoát</span></button>
+      </div>
+    </div>
+
+    <div v-if="showMobileSearch && !showChart" class="mobile-search-overlay">
+      <div class="mobile-search-overlay__bar">
+        <input
+          id="mobile-search-input"
+          v-model="globalSearchQuery"
+          type="text"
+          class="form-control"
+          placeholder="Tim ma ca, SDT, ten khach..."
+        >
+        <button class="mobile-search-overlay__close" @click="showMobileSearch = false" aria-label="Dong tim kiem">Dong</button>
+      </div>
+    </div>
+
+    <div v-if="showTopbarMenu && !showChart" class="topbar-menu-backdrop" @click="closeTopbarMenu">
+      <div class="topbar-menu-sheet" @click.stop>
+        <div class="topbar-menu-sheet__header">
+          <div>
+            <div class="topbar-menu-sheet__title">{{ userName || 'Tai khoan' }}</div>
+            <div class="topbar-menu-sheet__meta">{{ isAdmin ? 'Admin' : 'Nhan vien' }}</div>
+          </div>
+          <button class="topbar-menu-sheet__close" @click="closeTopbarMenu" aria-label="Dong menu">�</button>
+        </div>
+        <button v-if="isAdmin" class="topbar-menu-item" @click="closeTopbarMenu(); showChart = true">Bieu do</button>
+        <button v-if="isAdmin" class="topbar-menu-item" @click="closeTopbarMenu(); openAccountCenter()">Quan ly tai khoan</button>
+        <button class="topbar-menu-item topbar-menu-item--danger" @click="closeTopbarMenu(); logout()">Thoat</button>
       </div>
     </div>
 
@@ -1772,10 +1901,11 @@ onUnmounted(() => {
                 <option value="oldest">Cũ nhất lên đầu</option>
               </select>
               <template v-if="isAdmin">
-                <div v-if="showWarehouse" class="d-flex gap-1 w-100">
+                <div v-if="currentType === 'ASVN' && showWarehouse" class="d-flex gap-1 w-100">
                   <button @click="exportHoanThanhByWarehouse('TDP')" class="btn btn-outline-primary fw-bold flex-grow-1">Xuất TDP</button>
                   <button @click="exportHoanThanhByWarehouse('NV')"  class="btn btn-outline-success fw-bold flex-grow-1">Xuất NV</button>
                 </div>
+                <button v-else-if="currentType === 'CSVN'" @click="exportCsvnHoanThanh" class="btn btn-outline-dark fw-bold">Xuất CSVN</button>
                 <button v-else @click="exportAllHoanThanh" class="btn btn-outline-dark fw-bold">XUẤT EXCEL</button>
               </template>
             </div>
@@ -1810,6 +1940,27 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <div class="sidebar-stats">
+          <div class="sidebar-stats__title">Tong quan nhanh</div>
+          <div class="sidebar-stats__grid">
+            <div class="sidebar-stat">
+              <span>Dang lam</span>
+              <strong>{{ currentType === 'OUTSIDE' ? outsideDangLam.length : dangLam.length }}</strong>
+            </div>
+            <div class="sidebar-stat">
+              <span>Cho LK</span>
+              <strong>{{ currentType === 'OUTSIDE' ? outsideChoLinhKien.length : choLinhKien.length }}</strong>
+            </div>
+            <div class="sidebar-stat">
+              <span>Xong hom nay</span>
+              <strong>{{ stats.hoanThanhHomNay }}</strong>
+            </div>
+            <div class="sidebar-stat">
+              <span>Doanh thu</span>
+              <strong>{{ formatCurrency(stats.doanhThuHomNay) }}</strong>
+            </div>
+          </div>
+        </div>
         <button
           v-if="isMobileControlCollapsed"
           @click.stop="expandMobileControlCard"
@@ -1827,13 +1978,20 @@ onUnmounted(() => {
       </div>
 
       <!-- CASES -->
-      <section class="cases-section">
+      <section :class="['cases-section', { 'cases-section--compact': mobileCompactMode }]">
         <div class="section-header">
-          <h2 class="section-title">
-            {{ currentType === 'ASVN' ? 'Ca ASVN' : currentType === 'CSVN' ? 'Ca CSVN' : 'Ca Ngoài' }}
-            <span v-if="showWarehouse && currentType === 'ASVN' && !searchQuery && showTab !== 'hoanthanh'"
-              class="badge ms-2" :class="getWarehouseBadgeClass(currentWarehouse)">{{ currentWarehouse }}</span>
-          </h2>
+          <div>
+            <h2 class="section-title">
+              {{ currentType === 'ASVN' ? 'Ca ASVN' : currentType === 'CSVN' ? 'Ca CSVN' : 'Ca Ngoai' }}
+              <span v-if="showWarehouse && currentType === 'ASVN' && !searchQuery && showTab !== 'hoanthanh'"
+                class="badge ms-2" :class="getWarehouseBadgeClass(currentWarehouse)">{{ currentWarehouse }}</span>
+            </h2>
+          </div>
+          <div class="section-tools">
+            <button class="section-tool-btn topbar-mobile-only" @click="toggleCompactMode">
+              {{ mobileCompactMode ? 'Hien day du' : 'Xem gon' }}
+            </button>
+          </div>
         </div>
 
         <div v-if="isGlobalSearchActive">
@@ -3093,4 +3251,64 @@ onUnmounted(() => {
 .price-display { display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; }
 .price-value { font-size: 1.3rem; font-weight: 800; color: #16a34a; }
 .lk-edit-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid #e5e7eb; font-size: 0.9rem; }
+.topbar-mobile-only { display: none; }
+.mobile-search-overlay { position: sticky; top: 50px; z-index: 95; padding: 0.6rem 0.75rem 0; }
+.mobile-search-overlay__bar { display: flex; gap: 0.6rem; background: #ffffff; border: 1px solid #dbe3ef; border-radius: 16px; box-shadow: 0 18px 36px rgba(15,23,42,.12); padding: 0.7rem; }
+.mobile-search-overlay__close { border: 0; border-radius: 12px; background: #e2e8f0; color: #0f172a; padding: 0.75rem 0.9rem; font-weight: 700; }
+.topbar-menu-backdrop { position: fixed; inset: 0; z-index: 140; background: rgba(15,23,42,.35); display: flex; justify-content: flex-end; align-items: flex-start; padding: 4.5rem 1rem 1rem; }
+.topbar-menu-sheet { width: min(320px, 100%); background: #fff; border-radius: 20px; box-shadow: 0 24px 60px rgba(15,23,42,.22); padding: 1rem; border: 1px solid #dbe3ef; }
+.topbar-menu-sheet__header { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; margin-bottom: 0.8rem; }
+.topbar-menu-sheet__title { font-size: 1rem; font-weight: 800; color: #0f172a; }
+.topbar-menu-sheet__meta { font-size: 0.82rem; color: #64748b; }
+.topbar-menu-sheet__close { width: 40px; height: 40px; border: 0; border-radius: 999px; background: #e2e8f0; color: #0f172a; font-size: 1.4rem; line-height: 1; }
+.topbar-menu-item { width: 100%; border: 0; border-radius: 14px; background: #f8fafc; color: #0f172a; padding: 0.9rem 1rem; text-align: left; font-weight: 700; margin-top: 0.55rem; }
+.topbar-menu-item--danger { background: #fee2e2; color: #991b1b; }
+.section-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; text-align: left; }
+.section-tools { display: flex; gap: 0.6rem; }
+.section-tool-btn { border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; border-radius: 999px; padding: 0.55rem 0.85rem; font-size: 0.82rem; font-weight: 700; }
+.sidebar-stats { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
+.sidebar-stats__title { font-size: 0.82rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #64748b; margin-bottom: 0.8rem; }
+.sidebar-stats__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+.sidebar-stat { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 0.8rem; }
+.sidebar-stat span { display: block; font-size: 0.78rem; color: #64748b; margin-bottom: 0.25rem; }
+.sidebar-stat strong { display: block; font-size: 1.1rem; color: #0f172a; }
+.cases-section { padding-bottom: 80px; }
+.page-wrap--compact-mobile .case-card .case-phone,
+.page-wrap--compact-mobile .case-card .case-model,
+.page-wrap--compact-mobile .case-card .case-meta,
+.page-wrap--compact-mobile .case-card .case-part,
+.page-wrap--compact-mobile .case-card .badge,
+.page-wrap--compact-mobile .case-card input[type="checkbox"],
+.page-wrap--compact-mobile .case-card .btn,
+.page-wrap--compact-mobile .case-card .swipe-hint-right,
+.page-wrap--compact-mobile .case-card .swipe-hint-left { display: none !important; }
+.page-wrap--compact-mobile .case-card .card-body { padding: 0.8rem 0.95rem; }
+.page-wrap--compact-mobile .case-card .case-head { margin-bottom: 0.35rem; }
+.page-wrap--compact-mobile .case-card .case-ticket { font-size: 0.9rem; display: inline-block; max-width: 100%; }
+.page-wrap--compact-mobile .case-card .case-primary { display: block; }
+.page-wrap--compact-mobile .case-card .case-customer { font-size: 0.95rem; margin-bottom: 0.18rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page-wrap--compact-mobile .case-card .case-issue { font-size: 0.86rem; color: #b91c1c; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page-wrap--compact-mobile .case-card .case-main { gap: 0.1rem; }
+.page-wrap--compact-mobile .case-card .card { min-height: 0; }
+.page-wrap--compact-mobile .case-card:hover { transform: none; }
+.media-del { width: 32px; height: 32px; }
+.media-del::before { content: ''; position: absolute; inset: -8px; }
+@media (min-width: 992px) {
+  .layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); align-items: start; }
+  .control-card { align-self: start; }
+  .control-card--sticky { top: 76px; }
+  .cases-section { min-height: calc(100vh - 120px); }
+  .case-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .topbar-user { max-width: 180px; }
+}
+@media (max-width: 768px) {
+  .topbar-mobile-only { display: inline-flex; }
+  .topbar { height: 56px; }
+  .btn-topbar { width: 44px; min-width: 44px; height: 44px; border-radius: 12px; }
+  .topbar-right { gap: 0.35rem; }
+  .topbar-menu-backdrop { align-items: flex-end; justify-content: stretch; padding: 0; }
+  .topbar-menu-sheet { width: 100%; border-radius: 24px 24px 0 0; padding: 1rem 1rem 1.4rem; }
+  .sidebar-stats { display: none; }
+}
 </style>
+

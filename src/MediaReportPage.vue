@@ -83,7 +83,6 @@ const reportItems = computed(() => report.value?.items || [])
 const visibleItems = computed(() => reportItems.value.slice(0, visibleCount.value))
 const reportTitle = computed(() => report.value?.title || 'Bao cao media')
 const reportCreatedAt = computed(() => formatDateTime(report.value?.createdAt))
-const totalMedia = computed(() => reportItems.value.reduce((sum, entry) => sum + (entry.item?.mediaCount || 0), 0))
 const hasMoreItems = computed(() => visibleCount.value < reportItems.value.length)
 
 const getEntryState = (itemId) => mediaState.value[itemId] || { open: false, loading: false, loaded: false, media: [], error: '' }
@@ -222,10 +221,6 @@ const goBackHome = () => {
           <div class="media-report-metric">
             <span class="media-report-metric-label">Dang hien</span>
             <strong>{{ visibleItems.length }}</strong>
-          </div>
-          <div class="media-report-metric">
-            <span class="media-report-metric-label">Tong media</span>
-            <strong>{{ totalMedia }}</strong>
           </div>
         </section>
 
