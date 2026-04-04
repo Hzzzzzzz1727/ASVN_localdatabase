@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://specialist-solutions-insider-airlines.trycloudflare.com/api/:match*"
+      "destination": "https://trial-handhelds-advocacy-loaded.trycloudflare.com/api/:match*"
     },
     {
       "source": "/media/(.*)",
-      "destination": "https://specialist-solutions-insider-airlines.trycloudflare.com/media/$1"
+      "destination": "https://trial-handhelds-advocacy-loaded.trycloudflare.com/media/$1"
     }
   ]
 }
