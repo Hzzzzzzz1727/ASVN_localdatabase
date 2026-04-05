@@ -1761,26 +1761,28 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="showTopbarMenu && !showChart" class="topbar-menu-backdrop" @click="closeTopbarMenu">
-      <div class="topbar-menu-sheet" @click.stop>
-        <div class="topbar-menu-sheet__header">
-          <div class="topbar-menu-sheet__profile">
-            <div class="topbar-menu-avatar">
-              <img v-if="currentAvatarUrl" :src="currentAvatarUrl" alt="Avatar" class="topbar-menu-avatar__image">
-              <span v-else class="topbar-menu-avatar__fallback">{{ profileInitial }}</span>
+    <transition name="topbar-menu">
+      <div v-if="showTopbarMenu && !showChart" class="topbar-menu-backdrop" @click="closeTopbarMenu">
+        <div class="topbar-menu-sheet" @click.stop>
+          <div class="topbar-menu-sheet__header">
+            <div class="topbar-menu-sheet__profile">
+              <div class="topbar-menu-avatar">
+                <img v-if="currentAvatarUrl" :src="currentAvatarUrl" alt="Avatar" class="topbar-menu-avatar__image">
+                <span v-else class="topbar-menu-avatar__fallback">{{ profileInitial }}</span>
+              </div>
+              <div>
+                <div class="topbar-menu-sheet__title">{{ userName || 'Tai khoan' }}</div>
+                <div class="topbar-menu-sheet__meta">{{ isAdmin ? 'Admin' : 'Nhan vien' }}</div>
+              </div>
             </div>
-            <div>
-              <div class="topbar-menu-sheet__title">{{ userName || 'Tai khoan' }}</div>
-              <div class="topbar-menu-sheet__meta">{{ isAdmin ? 'Admin' : 'Nhan vien' }}</div>
-            </div>
+            <button class="topbar-menu-sheet__close" @click="closeTopbarMenu" aria-label="Dong menu">�</button>
           </div>
-          <button class="topbar-menu-sheet__close" @click="closeTopbarMenu" aria-label="Dong menu">�</button>
+          <button v-if="isAdmin" class="topbar-menu-item" @click="closeTopbarMenu(); showChart = true">Bieu do</button>
+          <button class="topbar-menu-item" @click="closeTopbarMenu(); openAccountCenter()">Trung tam tai khoan</button>
+          <button class="topbar-menu-item topbar-menu-item--danger" @click="closeTopbarMenu(); logout()">Thoat</button>
         </div>
-        <button v-if="isAdmin" class="topbar-menu-item" @click="closeTopbarMenu(); showChart = true">Bieu do</button>
-        <button class="topbar-menu-item" @click="closeTopbarMenu(); openAccountCenter()">Trung tam tai khoan</button>
-        <button class="topbar-menu-item topbar-menu-item--danger" @click="closeTopbarMenu(); logout()">Thoat</button>
       </div>
-    </div>
+    </transition>
 
     <div v-show="!showChart" class="layout">
       <div
@@ -2969,13 +2971,15 @@ onUnmounted(() => {
 .topbar-right { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
 .topbar-search { min-width: 260px; max-width: 320px; width: 100%; flex: 1 1 260px; }
 .topbar-user  { font-size: 0.85rem; color: #94a3b8; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.btn-topbar   { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 0.35rem 0.75rem; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all .2s; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; line-height: 1; }
-.btn-topbar:hover { background: rgba(255,255,255,0.2); }
+.btn-topbar   { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 0.35rem 0.75rem; font-size: 0.82rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; line-height: 1; transform: translateZ(0); will-change: transform, background-color, border-color; transition: transform .14s ease-out, background-color .16s ease-out, border-color .16s ease-out, box-shadow .18s ease-out; }
+.btn-topbar:hover { background: rgba(255,255,255,0.18); box-shadow: 0 8px 18px rgba(15,23,42,.16); transform: translateY(-1px); }
+.btn-topbar:active { transform: translateY(0) scale(.98); box-shadow: none; }
 .btn-topbar--active { background: #3b82f6; border-color: #3b82f6; }
 .btn-topbar--alert { position: relative; }
-.topbar-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 0.3rem; border-radius: 999px; background: #ef4444; color: #fff; font-size: 0.7rem; font-weight: 700; margin-left: 0.35rem; }
+.topbar-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 0.3rem; border-radius: 999px; background: #ef4444; color: #fff; font-size: 0.7rem; font-weight: 700; margin-left: 0.35rem; transform: translateZ(0); transition: transform .16s ease-out, background-color .16s ease-out; }
+.btn-topbar:hover .topbar-badge { transform: scale(1.06); }
 .btn-topbar--logout { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.4); }
-.btn-topbar--logout:hover { background: rgba(239,68,68,0.3); }
+.btn-topbar--logout:hover { background: rgba(239,68,68,0.26); }
 
 /* ── Admin Panel wrap ─────────────────────────────────────── */
 .admin-panel-wrap {
@@ -3281,7 +3285,15 @@ onUnmounted(() => {
 .mobile-search-overlay__bar { display: flex; gap: 0.6rem; background: #ffffff; border: 1px solid #dbe3ef; border-radius: 16px; box-shadow: 0 18px 36px rgba(15,23,42,.12); padding: 0.7rem; }
 .mobile-search-overlay__close { border: 0; border-radius: 12px; background: #e2e8f0; color: #0f172a; padding: 0.75rem 0.9rem; font-weight: 700; }
 .topbar-menu-backdrop { position: fixed; inset: 0; z-index: 140; background: rgba(15,23,42,.35); display: flex; justify-content: flex-end; align-items: flex-start; padding: 4.5rem 1rem 1rem; }
-.topbar-menu-sheet { width: min(320px, 100%); background: #fff; border-radius: 20px; box-shadow: 0 24px 60px rgba(15,23,42,.22); padding: 1rem; border: 1px solid #dbe3ef; }
+.topbar-menu-sheet { width: min(320px, 100%); background: #fff; border-radius: 20px; box-shadow: 0 24px 60px rgba(15,23,42,.22); padding: 1rem; border: 1px solid #dbe3ef; transform: translate3d(0, 0, 0); will-change: transform, opacity; }
+.topbar-menu-enter-active,
+.topbar-menu-leave-active { transition: opacity .18s ease-out; }
+.topbar-menu-enter-from,
+.topbar-menu-leave-to { opacity: 0; }
+.topbar-menu-enter-active .topbar-menu-sheet,
+.topbar-menu-leave-active .topbar-menu-sheet { transition: transform .22s cubic-bezier(.22,1,.36,1), opacity .18s ease-out; }
+.topbar-menu-enter-from .topbar-menu-sheet,
+.topbar-menu-leave-to .topbar-menu-sheet { opacity: 0; transform: translate3d(0, -10px, 0) scale(.985); }
 .topbar-menu-sheet__header { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; margin-bottom: 0.8rem; }
 .topbar-menu-sheet__profile { display: flex; align-items: center; gap: 0.8rem; min-width: 0; }
 .topbar-menu-avatar { width: 56px; height: 56px; border-radius: 999px; overflow: hidden; flex-shrink: 0; background: linear-gradient(135deg, #0f766e, #2563eb); color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 24px rgba(37,99,235,.18); }
@@ -3289,10 +3301,15 @@ onUnmounted(() => {
 .topbar-menu-avatar__fallback { font-size: 1.15rem; font-weight: 900; }
 .topbar-menu-sheet__title { font-size: 1rem; font-weight: 800; color: #0f172a; }
 .topbar-menu-sheet__meta { font-size: 0.82rem; color: #64748b; }
-.topbar-menu-sheet__close { width: 40px; height: 40px; border: 0; border-radius: 999px; background: #e2e8f0; color: transparent; font-size: 0; line-height: 1; position: relative; }
-.topbar-menu-sheet__close::before { content: '×'; color: #0f172a; font-size: 1.4rem; line-height: 1; }
-.topbar-menu-item { width: 100%; border: 0; border-radius: 14px; background: #f8fafc; color: #0f172a; padding: 0.9rem 1rem; text-align: left; font-weight: 700; margin-top: 0.55rem; }
+.topbar-menu-sheet__close { width: 40px; height: 40px; border: 0; border-radius: 999px; background: #e2e8f0; color: transparent; font-size: 0; line-height: 1; position: relative; display: inline-flex; align-items: center; justify-content: center; transform: translateZ(0); transition: transform .14s ease-out, background-color .16s ease-out; }
+.topbar-menu-sheet__close::before { content: '×'; color: #0f172a; font-size: 1.35rem; line-height: 1; display: block; transform: translateY(-1px); }
+.topbar-menu-sheet__close:hover { background: #cfd8e3; transform: scale(1.04); }
+.topbar-menu-sheet__close:active { transform: scale(.97); }
+.topbar-menu-item { width: 100%; border: 0; border-radius: 14px; background: #f8fafc; color: #0f172a; padding: 0.9rem 1rem; text-align: left; font-weight: 700; margin-top: 0.55rem; transform: translateZ(0); transition: transform .14s ease-out, background-color .16s ease-out, box-shadow .18s ease-out; }
+.topbar-menu-item:hover { background: #eef4fb; box-shadow: 0 10px 22px rgba(15,23,42,.08); transform: translateY(-1px); }
+.topbar-menu-item:active { transform: translateY(0) scale(.985); box-shadow: none; }
 .topbar-menu-item--danger { background: #fee2e2; color: #991b1b; }
+.topbar-menu-item--danger:hover { background: #fecaca; }
 .section-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; text-align: left; }
 .section-tools { display: flex; gap: 0.6rem; }
 .section-tool-btn { border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; border-radius: 999px; padding: 0.55rem 0.85rem; font-size: 0.82rem; font-weight: 700; }
@@ -3324,7 +3341,7 @@ onUnmounted(() => {
 .media-del { width: 32px; height: 32px; }
 .media-del::before { content: ''; position: absolute; inset: -8px; }
 @media (min-width: 992px) {
-  .layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); align-items: start; }
+  .layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); align-items: start; }
   .control-card { align-self: start; }
   .control-card--sticky { top: 76px; }
   .status-toggle-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
@@ -3346,9 +3363,16 @@ onUnmounted(() => {
   .topbar-mobile-only { display: inline-flex; }
   .topbar { height: 56px; }
   .btn-topbar { width: 44px; min-width: 44px; height: 44px; border-radius: 12px; }
+  .btn-topbar:hover { transform: none; box-shadow: none; }
+  .btn-topbar:active { transform: scale(.96); }
   .topbar-right { gap: 0.35rem; }
   .topbar-menu-backdrop { align-items: flex-end; justify-content: stretch; padding: 0; }
   .topbar-menu-sheet { width: 100%; border-radius: 24px 24px 0 0; padding: 1rem 1rem 1.4rem; }
+  .topbar-menu-enter-from .topbar-menu-sheet,
+  .topbar-menu-leave-to .topbar-menu-sheet { transform: translate3d(0, 18px, 0) scale(.995); }
+  .topbar-menu-item:hover,
+  .topbar-menu-sheet__close:hover { transform: none; box-shadow: none; }
+  .topbar-menu-item:active { transform: scale(.985); }
   .sidebar-stats { display: none; }
 }
 </style>
